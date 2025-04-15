@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>店铺距离计算器</title>
+    <title>妙妙屋</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -113,10 +113,10 @@
 </head>
 <body>
     <div class="container">
-        <h1>店铺距离计算器</h1>
+        <h1>妙妙屋</h1>
         <div class="input-group">
             <input type="text" id="addressInput" placeholder="请输入店铺地址">
-            <button onclick="calculateDistances()">计算距离</button>
+            <button onclick="calculateDistances()">唐老鸭Go！</button>
         </div>
         <div class="note" style="margin-top: 10px; font-size: 14px; color: #666;">
             注意：显示的驾车时间和距离为系统估算值，实际驾驶时间可能因交通状况、天气等因素而有所不同。
@@ -147,20 +147,9 @@
             'pk.bffb77dd0872aa9d9109a5c15095cef6'
         ];
         
-        // 随机打乱API密钥顺序，提高负载均衡效果
-        function shuffleArray(array) {
-            for (let i = array.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [array[i], array[j]] = [array[j], array[i]];
-            }
-            return array;
-        }
-        
-        // 初始化时随机打乱密钥顺序
-        shuffleArray(LOCATIONIQ_KEYS);
         let currentKeyIndex = 0;
-
-        // 获取下一个API密钥，实现简单的轮询
+        
+        // 获取下一个API密钥，按顺序轮询
         function getNextApiKey() {
             const key = LOCATIONIQ_KEYS[currentKeyIndex];
             currentKeyIndex = (currentKeyIndex + 1) % LOCATIONIQ_KEYS.length;
@@ -170,7 +159,7 @@
         let citiesData = null;
         let dataLoaded = false;
         let isLoading = false;
-        const MAX_CONCURRENT_REQUESTS = 3; // 最大并发请求数
+        const MAX_CONCURRENT_REQUESTS = LOCATIONIQ_KEYS.length; // 最大并发请求数 = API密钥数量
 
         // 州缩写到全名的映射
         const stateAbbreviations = {
@@ -280,11 +269,16 @@
             // 获取原始URL不包含API密钥的部分
             const baseUrl = url.replace(/key=[^&]+/, 'key=API_KEY_PLACEHOLDER');
             
+            // 尝试每个API密钥，直到成功或全部尝试完
             while (triedKeys.size < LOCATIONIQ_KEYS.length) {
                 const currentKey = getNextApiKey();
                 
                 // 如果已经尝试过这个密钥，跳过
                 if (triedKeys.has(currentKey)) {
+                    // 如果所有密钥都已尝试过，退出循环
+                    if (triedKeys.size >= LOCATIONIQ_KEYS.length) {
+                        break;
+                    }
                     continue;
                 }
                 
@@ -308,8 +302,8 @@
                         if (response.ok) {
                             return response;
                         } else if (response.status === 429) {
-                            console.warn(`API密钥 ${currentKey.substring(0, 5)}... 请求速率限制，将尝试其他密钥或重试...`);
-                            // 如果是速率限制错误，尝试下一个API密钥
+                            console.warn(`API密钥 ${currentKey.substring(0, 5)}... 请求速率限制，将尝试下一个密钥...`);
+                            // 如果是速率限制错误，立即尝试下一个API密钥
                             break;
                         } else {
                             // 其他错误，获取错误信息
@@ -348,12 +342,48 @@
 
                 console.log('清理后的地址:', cleanedAddress);
 
+                // 先尝试从地址中提取州缩写
+                let state = null;
+                
+                // 尝试匹配地址中的州缩写
+                // 这会匹配地址中类似 "XX 12345" 或 "XX," 的模式，其中 XX 是两个大写字母
+                const stateZipMatch = cleanedAddress.match(/\b([A-Z]{2})[\s,]+\d{5}\b/);
+                const stateMatch = cleanedAddress.match(/\b([A-Z]{2})[\s,]*$/);
+                
+                if (stateZipMatch) {
+                    state = stateZipMatch[1];
+                    console.log('从地址中提取到州缩写(带邮编):', state);
+                } else if (stateMatch) {
+                    state = stateMatch[1];
+                    console.log('从地址中提取到州缩写:', state);
+                }
+                
+                // 验证提取的州缩写是否有效
+                if (state && stateAbbreviations[state]) {
+                    console.log('验证通过，有效的州缩写:', state);
+                } else {
+                    // 如果没有提取到有效州缩写，尝试搜索地址中的州名
+                    for (const [abbr, fullName] of Object.entries(stateAbbreviations)) {
+                        // 创建一个正则表达式，匹配州全名
+                        const stateRegex = new RegExp(`\\b${fullName.replace(/\s+/g, '\\s+')}\\b`, 'i');
+                        if (stateRegex.test(cleanedAddress.toLowerCase())) {
+                            state = abbr;
+                            console.log('从地址中找到州全名，转换为缩写:', state);
+                            break;
+                        }
+                    }
+                    
+                    if (!state) {
+                        console.log('无法从地址直接提取州信息，继续使用API...');
+                    }
+                }
+
                 const url = `https://us1.locationiq.com/v1/search.php?key=API_KEY_PLACEHOLDER&q=${encodeURIComponent(cleanedAddress)}&format=json&countrycodes=us&addressdetails=1`;
-                console.log('准备请求地理编码API...');
+                console.log('准备请求地理编码API，请求URL:', url.replace(/key=[^&]+/, 'key=***'));
                 
                 const response = await fetchWithRetry(url, 3, 1500);
                 const data = await response.json();
-                console.log('地理编码API响应成功!');
+                console.log('地理编码API响应:', data);
                 
                 if (!Array.isArray(data) || data.length === 0) {
                     throw new Error('未找到匹配的地址');
@@ -364,9 +394,8 @@
                     throw new Error('API返回的数据缺少坐标信息');
                 }
 
-                // 尝试从 API 返回的地址详情中提取州信息
-                let state = null;
-                if (firstResult.address) {
+                // 如果我们尚未从地址中提取到州信息，尝试从API响应中获取
+                if (!state && firstResult.address) {
                     // 首先检查 state_code（州缩写）
                     if (firstResult.address.state_code) {
                         state = firstResult.address.state_code.toUpperCase();
@@ -388,24 +417,43 @@
                     }
                 }
 
-                // 如果API没有提供州信息，尝试从原始地址中提取
-                if (!state) {
-                    console.log('API未返回州信息，尝试从地址中提取');
-                    // 尝试匹配两个大写字母作为州缩写
-                    const stateMatch = cleanedAddress.match(/,\s*([A-Z]{2})(\s*,|\s+\d{5}|\s*$)/);
-                    if (stateMatch) {
-                        state = stateMatch[1].toUpperCase();
-                        console.log('从地址中提取到州缩写:', state);
+                // 如果仍然没有找到有效的州信息，尝试更广泛的提取方式
+                if (!state || !stateAbbreviations[state]) {
+                    console.log('尝试更广泛地提取州信息');
+                    
+                    // 尝试从地址中提取所有大写字母对
+                    const allCapsMatches = cleanedAddress.match(/\b([A-Z]{2})\b/g);
+                    if (allCapsMatches) {
+                        for (const potentialState of allCapsMatches) {
+                            if (stateAbbreviations[potentialState]) {
+                                state = potentialState;
+                                console.log('从地址中找到可能的州缩写:', state);
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // 最后的尝试：检查地址中是否包含任何州的名称（不区分大小写）
+                    if (!state) {
+                        const lowerAddress = cleanedAddress.toLowerCase();
+                        for (const [abbr, fullName] of Object.entries(stateAbbreviations)) {
+                            if (lowerAddress.includes(fullName) || 
+                                lowerAddress.includes(abbr.toLowerCase())) {
+                                state = abbr;
+                                console.log('在地址中找到州名的匹配:', state);
+                                break;
+                            }
+                        }
                     }
                 }
 
-                // 验证州缩写是否有效
+                // 最终验证州缩写是否有效
                 if (!state) {
-                    throw new Error('无法识别地址中的州信息');
+                    throw new Error('无法识别地址中的州信息，请确保地址中包含有效的州缩写或州名');
                 }
                 
                 if (!stateAbbreviations[state]) {
-                    throw new Error(`无效的州缩写: ${state}`);
+                    throw new Error(`无效的州缩写: ${state}，当前支持的州缩写有: ${Object.keys(stateAbbreviations).join(', ')}`);
                 }
 
                 return {
@@ -474,6 +522,119 @@
             return R * c;
         }
 
+        // 创建一个高效的请求队列，支持动态调整并发数
+        class RequestQueue {
+            constructor(maxConcurrent = 5, initialDelay = 100) {
+                this.maxConcurrent = maxConcurrent;  // 最大并发数
+                this.queue = [];                     // 请求队列
+                this.active = 0;                     // 当前活动请求数
+                this.results = [];                   // 结果集
+                this.baseDelay = initialDelay;       // 基础延迟时间(ms)
+                this.currentDelay = initialDelay;    // 当前延迟时间(ms)
+                this.successCount = 0;               // 连续成功请求数
+                this.failureCount = 0;               // 连续失败请求数
+                this.totalSuccess = 0;               // 总成功请求数
+                this.totalFailure = 0;               // 总失败请求数
+                this.adaptiveMode = true;            // 是否启用自适应模式
+            }
+
+            // 添加任务到队列
+            add(task) {
+                return new Promise((resolve, reject) => {
+                    this.queue.push({
+                        task,
+                        resolve,
+                        reject
+                    });
+                    this.run();
+                });
+            }
+
+            // 执行队列中的任务
+            async run() {
+                if (this.active >= this.maxConcurrent || this.queue.length === 0) {
+                    return;
+                }
+
+                // 从队列中取出一个任务
+                const { task, resolve, reject } = this.queue.shift();
+                this.active++;
+
+                // 添加延迟以防止请求过快
+                if (this.active > 1 && this.currentDelay > 0) {
+                    await new Promise(r => setTimeout(r, this.currentDelay));
+                }
+
+                try {
+                    // 执行任务
+                    const result = await task();
+                    this.successCount++;
+                    this.failureCount = 0;
+                    this.totalSuccess++;
+                    resolve(result);
+                    this.adjustThrottling(true);
+                } catch (error) {
+                    this.failureCount++;
+                    this.successCount = 0;
+                    this.totalFailure++;
+                    reject(error);
+                    this.adjustThrottling(false);
+                } finally {
+                    this.active--;
+                    this.run(); // 继续处理队列中的下一个任务
+                }
+            }
+
+            // 动态调整请求节流
+            adjustThrottling(success) {
+                if (!this.adaptiveMode) return;
+
+                // 成功情况下的调整
+                if (success) {
+                    // 连续多次成功，可以加快速度
+                    if (this.successCount >= 5) {
+                        this.currentDelay = Math.max(0, this.currentDelay - 10);
+                        // 如果连续成功多次，可以增加并发数，但不超过API密钥数量
+                        if (this.successCount >= 10 && this.maxConcurrent < LOCATIONIQ_KEYS.length) {
+                            this.maxConcurrent = Math.min(LOCATIONIQ_KEYS.length, this.maxConcurrent + 1);
+                            console.log(`提高并发数到 ${this.maxConcurrent}`);
+                        }
+                    }
+                } 
+                // 失败情况下的调整
+                else {
+                    // 出现失败，立即减慢速度
+                    this.currentDelay = this.currentDelay * 1.5 + 50;
+                    
+                    // 如果连续失败，减少并发数
+                    if (this.failureCount >= 2) {
+                        this.maxConcurrent = Math.max(1, this.maxConcurrent - 1);
+                        console.log(`降低并发数到 ${this.maxConcurrent}`);
+                    }
+                    
+                    // 如果失败率过高，增加更多延迟
+                    const failureRate = this.totalFailure / (this.totalSuccess + this.totalFailure + 1);
+                    if (failureRate > 0.1) {
+                        this.currentDelay += 200;
+                        console.log(`失败率高 (${(failureRate*100).toFixed(1)}%)，增加延迟到 ${this.currentDelay}ms`);
+                    }
+                }
+
+                // 限制最小和最大延迟
+                this.currentDelay = Math.min(3000, Math.max(0, this.currentDelay));
+            }
+
+            // 重置队列
+            reset() {
+                this.queue = [];
+                this.active = 0;
+                this.results = [];
+                this.currentDelay = this.baseDelay;
+                this.successCount = 0;
+                this.failureCount = 0;
+            }
+        }
+
         // 主计算函数
         async function calculateDistances() {
             const address = document.getElementById('addressInput').value.trim();
@@ -520,7 +681,7 @@
                 
                 // 根据州缩写获取全名
                 const stateKey = storeLocation.state;
-                const stateFullName = stateAbbreviations[stateKey];
+                const stateFullName = stateAbbreviations[stateKey].toLowerCase();
                 
                 console.log('州缩写:', stateKey);
                 console.log('州全名:', stateFullName);
@@ -529,6 +690,9 @@
                     showError(`未知的州缩写 "${stateKey}"，当前支持的州缩写有: ${Object.keys(stateAbbreviations).join(', ')}`);
                     return;
                 }
+                
+                console.log('检查州数据是否存在:', stateFullName);
+                console.log('城市数据中的州列表:', Object.keys(citiesData));
                 
                 if (!citiesData[stateFullName]) {
                     showError(`未找到州 "${stateKey}" (${stateFullName}) 的城市数据，请确认所选州的数据是否存在`);
@@ -593,47 +757,39 @@
                         // 更新状态为成功
                         cityStatuses[city].className = 'status-item status-success';
                         cityStatuses[city].textContent = `${city}: ${travelInfo.duration} 分钟 (${travelInfo.distance} 英里)`;
+                        return { success: true, city };
                     } catch (error) {
                         console.error(`处理城市 ${city} 时出错:`, error);
                         // 更新状态为错误
                         cityStatuses[city].className = 'status-item status-error';
                         cityStatuses[city].textContent = `${city}: 计算失败 - ${error.message}`;
+                        return { success: false, city, error };
                     } finally {
                         completed++;
                         updateProgress();
                     }
                 }
 
-                // 并发处理城市
-                async function processCitiesConcurrently() {
-                    // 创建城市队列
-                    const cityQueue = [...stateCities];
-                    const activeTasks = [];
+                // 使用高级队列处理城市
+                async function processCitiesWithQueue() {
+                    // 创建一个初始并发数与API密钥数量相同的请求队列
+                    const requestQueue = new RequestQueue(LOCATIONIQ_KEYS.length, 100);
+                    console.log(`开始处理城市，初始并发数：${requestQueue.maxConcurrent} (与API密钥数量相同)，初始延迟：${requestQueue.currentDelay}ms`);
                     
-                    // 处理队列中的城市，直到队列为空
-                    while (cityQueue.length > 0 || activeTasks.length > 0) {
-                        // 填充活动任务队列，直到达到最大并发数或队列为空
-                        while (activeTasks.length < MAX_CONCURRENT_REQUESTS && cityQueue.length > 0) {
-                            const city = cityQueue.shift();
-                            const task = processCity(city).then(() => {
-                                // 任务完成后从活动任务队列中删除
-                                const index = activeTasks.indexOf(task);
-                                if (index !== -1) {
-                                    activeTasks.splice(index, 1);
-                                }
-                            });
-                            activeTasks.push(task);
-                        }
-                        
-                        // 等待任何一个任务完成
-                        if (activeTasks.length > 0) {
-                            await Promise.race(activeTasks);
-                        }
-                    }
+                    // 添加所有城市到请求队列
+                    const cityProcessPromises = stateCities.map(city => {
+                        return requestQueue.add(() => processCity(city));
+                    });
+                    
+                    // 等待所有城市处理完成
+                    await Promise.allSettled(cityProcessPromises);
+                    
+                    console.log(`所有城市处理完成，最终并发数：${requestQueue.maxConcurrent}，最终延迟：${requestQueue.currentDelay}ms`);
+                    console.log(`总计：成功=${requestQueue.totalSuccess}，失败=${requestQueue.totalFailure}`);
                 }
 
-                // 开始并发处理
-                await processCitiesConcurrently();
+                // 开始智能并发处理
+                await processCitiesWithQueue();
 
                 if (results.length === 0) {
                     showError('无法计算任何城市的距离');
