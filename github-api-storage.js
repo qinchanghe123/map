@@ -212,8 +212,5 @@ async function recordApiRequest(apiKey, timestamp = new Date()) {
 // 导出模块
 window.GitHubApiStorage = {
   getApiUsageData,
-  recordApiRequest,
-  hasValidToken: function() {
-    return !!config.token && config.token.length > 10;
-  }
+  recordApiRequest
 }; 
