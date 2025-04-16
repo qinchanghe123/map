@@ -226,14 +226,48 @@
         function loadApiUsageData() {
             return new Promise((resolve, reject) => {
                 console.log('从GitHub获取API使用量数据...');
+                console.log('调用GitHubApiStorage.getApiUsageData()...');
                 GitHubApiStorage.getApiUsageData()
                     .then(data => {
-                        console.log('成功从GitHub获取API使用量数据');
+                        console.log('成功从GitHub获取API使用量数据:', data);
+                        // 打印数据内容
+                        console.log('数据详情:');
+                        console.log('总请求数:', data.totalRequests);
+                        console.log('每日数据:', data.dailyData);
+                        console.log('API密钥数据:', data.keyData);
                         resolve(data);
                     })
                     .catch(error => {
                         console.error('从GitHub获取API使用量数据失败:', error);
-                        reject(error);
+                        
+                        // 尝试从本地文件加载
+                        console.log('尝试从本地文件加载...');
+                        fetch('api_usage.json')
+                            .then(response => {
+                                if (response.ok) {
+                                    console.log('加载本地文件成功，解析JSON...');
+                                    return response.json();
+                                } else {
+                                    console.error('加载本地文件失败:', response.status, response.statusText);
+                                    throw new Error('无法加载API使用数据文件');
+                                }
+                            })
+                            .then(data => {
+                                console.log('成功从本地文件加载API使用数据:', data);
+                                resolve(data);
+                            })
+                            .catch(localError => {
+                                console.error('从本地加载也失败:', localError);
+                                
+                                // 创建空数据
+                                console.log('创建默认空数据...');
+                                const emptyData = {
+                                    totalRequests: 0,
+                                    dailyData: {},
+                                    keyData: {}
+                                };
+                                resolve(emptyData);
+                            });
                     });
             });
         }
