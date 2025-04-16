@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>API查询使用量统计 - 顶流广告技术有限公司</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="github-api-storage.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .header h1 {
+            margin: 0;
+            color: #333;
+        }
+        .header .links a {
+            margin-left: 15px;
+            text-decoration: none;
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 30px;
+        }
+        .stats-card {
+            background-color: #f9f9f9;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .stats-header {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 18px;
+        }
+        .stats-body {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .stat-item {
+            flex: 1;
+            min-width: 180px;
+            background-color: white;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #4CAF50;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .stat-title {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+        .date-filter {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .date-filter select, 
+        .date-filter button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .date-filter button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        .date-filter button:hover {
+            background-color: #45a049;
+        }
+        footer {
+            text-align: center;
+            margin-top: 30px;
+            padding: 15px;
+            border-top: 1px solid #ddd;
+            color: #666;
+            font-size: 12px;
+        }
+        .api-key-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        .api-key-table th, 
+        .api-key-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        .api-key-table th {
+            background-color: #f5f5f5;
+            font-weight: bold;
+            color: #333;
+        }
+        .api-key-table tr:hover {
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>API查询使用量统计</h1>
+            <div class="links">
+                <a href="index.html">返回主页</a>
+                <a href="#" onclick="refreshData()">刷新数据</a>
+            </div>
+        </div>
+
+        <div class="date-filter">
+            <select id="timeRange" onchange="applyDateFilter()">
+                <option value="today">今日</option>
+                <option value="7" selected>最近7天</option>
+                <option value="30">最近30天</option>
+                <option value="all">全部数据</option>
+            </select>
+            <button onclick="refreshData()">刷新</button>
+        </div>
+
+        <div class="stats-card">
+            <div class="stats-header">API使用总览</div>
+            <div class="stats-body">
+                <div class="stat-item">
+                    <div class="stat-title">总API请求次数</div>
+                    <div class="stat-value" id="totalRequests">--</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-title">今日请求次数</div>
+                    <div class="stat-value" id="todayRequests">--</div>
+                </div>
+                <div class="stat-item" style="display: none;">
+                    <div class="stat-title">有效API密钥数</div>
+                    <div class="stat-value" id="activeKeys">--</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="dailyRequestsChart"></canvas>
+        </div>
+
+        <div class="stats-card" style="display: none;">
+            <div class="stats-header">API密钥使用统计</div>
+            <table class="api-key-table">
+                <thead>
+                    <tr>
+                        <th>API密钥</th>
+                        <th>使用次数</th>
+                        <th>最后使用时间</th>
+                    </tr>
+                </thead>
+                <tbody id="apiKeyTableBody">
+                    <!-- API密钥数据将通过JavaScript填充 -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 页面底部版权声明 -->
+    <footer>
+        <p>© 2023-2024 顶流广告技术有限公司 版权所有</p>
+        <p>技术支持：Ski定点查询系统</p>
+    </footer>
+
+    <script>
+        // 全局API使用数据对象
+        let apiUsageData = null;
+
+        // 应用日期过滤器
+        function applyDateFilter() {
+            refreshData();
+        }
+
+        // 刷新数据
+        function refreshData() {
+            const timeRange = document.getElementById('timeRange').value;
+            loadApiUsageData().then(data => {
+                apiUsageData = data;
+                displayStats(apiUsageData, timeRange);
+                createDailyChart(apiUsageData, timeRange);
+                populateApiKeyTable(apiUsageData);
+            }).catch(error => {
+                console.error('加载API使用数据失败:', error);
+                alert('无法加载API使用数据: ' + error.message);
+            });
+        }
+
+        // 加载API使用数据
+        function loadApiUsageData() {
+            return new Promise((resolve, reject) => {
+                console.log('从GitHub获取API使用量数据...');
+                GitHubApiStorage.getApiUsageData()
+                    .then(data => {
+                        console.log('成功从GitHub获取API使用量数据');
+                        resolve(data);
+                    })
+                    .catch(error => {
+                        console.error('从GitHub获取API使用量数据失败:', error);
+                        reject(error);
+                    });
+            });
+        }
+
+        // 显示统计数据
+        function displayStats(data, timeRange) {
+            // 使用北京时间计算今天的日期
+            const beijingNow = new Date(new Date().getTime() + 8 * 60 * 60 * 1000);
+            const today = beijingNow.toISOString().substring(0, 10);
+            
+            let totalRequests = 0;
+            let todayRequests = 0;
+            
+            // 计算总请求数和今日请求数
+            if (data.dailyData) {
+                for (const [date, count] of Object.entries(data.dailyData)) {
+                    totalRequests += count;
+                    if (date === today) {
+                        todayRequests = count;
+                    }
+                }
+            }
+            
+            // 总请求数
+            document.getElementById('totalRequests').textContent = totalRequests;
+            
+            // 今日请求数
+            document.getElementById('todayRequests').textContent = todayRequests;
+        }
+
+        // 创建每日请求图表
+        function createDailyChart(data, timeRange) {
+            const ctx = document.getElementById('dailyRequestsChart').getContext('2d');
+            
+            // 清除旧图表
+            if (window.dailyChart) {
+                window.dailyChart.destroy();
+            }
+            
+            // 根据时间范围筛选数据
+            const filteredData = filterDataByTimeRange(data.dailyData, timeRange);
+            
+            // 按日期排序
+            const sortedDates = Object.keys(filteredData).sort();
+            const requestCounts = sortedDates.map(date => filteredData[date]);
+            
+            // 创建图表
+            window.dailyChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: sortedDates,
+                    datasets: [
+                        {
+                            label: 'API请求次数',
+                            data: requestCounts,
+                            backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '每日API请求次数',
+                            font: {
+                                size: 16
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 45
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '请求次数'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 根据时间范围筛选数据
+        function filterDataByTimeRange(dailyData, timeRange) {
+            if (!dailyData) return {};
+            
+            // 使用北京时间
+            const beijingNow = new Date(new Date().getTime() + 8 * 60 * 60 * 1000);
+            const today = new Date(beijingNow);
+            today.setHours(0, 0, 0, 0);
+            
+            const result = {};
+            
+            if (timeRange === 'today') {
+                const dateStr = today.toISOString().substring(0, 10);
+                if (dailyData[dateStr]) {
+                    result[dateStr] = dailyData[dateStr];
+                }
+                return result;
+            }
+            
+            if (timeRange === 'all') {
+                return { ...dailyData };
+            }
+            
+            // 处理最近N天
+            const days = parseInt(timeRange);
+            let startDateN = new Date(today);
+            startDateN.setDate(today.getDate() - days + 1);
+            
+            for (let d = new Date(startDateN); d <= today; d.setDate(d.getDate() + 1)) {
+                const dateStr = d.toISOString().substring(0, 10);
+                result[dateStr] = dailyData[dateStr] || 0;
+            }
+            
+            return result;
+        }
+
+        // 填充API密钥统计表
+        function populateApiKeyTable(data) {
+            const tableBody = document.getElementById('apiKeyTableBody');
+            tableBody.innerHTML = '';
+            
+            if (!data.keyData) return;
+            
+            // 转换为数组，并排序
+            const keyStats = Object.entries(data.keyData)
+                .map(([key, stats]) => ({
+                    key,
+                    shortKey: key.substring(0, 10) + '...',
+                    count: stats.count,
+                    lastUsed: stats.lastUsed ? new Date(stats.lastUsed) : null
+                }))
+                .sort((a, b) => b.count - a.count); // 按使用次数降序排序
+            
+            keyStats.forEach(stat => {
+                const row = document.createElement('tr');
+                
+                // API密钥
+                const keyCell = document.createElement('td');
+                keyCell.textContent = stat.shortKey;
+                row.appendChild(keyCell);
+                
+                // 使用次数
+                const countCell = document.createElement('td');
+                countCell.textContent = stat.count;
+                row.appendChild(countCell);
+                
+                // 最后使用时间
+                const lastUsedCell = document.createElement('td');
+                lastUsedCell.textContent = stat.lastUsed ? formatDateTime(stat.lastUsed) : '从未使用';
+                row.appendChild(lastUsedCell);
+                
+                tableBody.appendChild(row);
+            });
+        }
+
+        // 格式化日期时间
+        function formatDateTime(date) {
+            // 将日期转换为北京时间
+            const beijingDate = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+            return beijingDate.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            }) + ' (北京时间)';
+        }
+
+        // 初始化
+        window.onload = function() {
+            console.log('统计页面已加载，正在获取API使用量数据...');
+            refreshData();
+        };
+    </script>
+</body>
+</html> 
