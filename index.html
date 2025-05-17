@@ -1,266 +1,125 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
-    <title>顶流广告技术有限公司</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .input-group {
-            margin-bottom: 20px;
-        }
-        input[type="text"] {
-            width: 100%;
-            padding: 10px;
-            font-size: 16px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            margin-bottom: 10px;
-        }
-        button {
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        button:hover {
-            background-color: #45a049;
-        }
-        .results {
-            margin-top: 20px;
-        }
-        .city-item {
-            padding: 10px;
-            border-bottom: 1px solid #eee;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .city-item:last-child {
-            border-bottom: none;
-        }
-        .loading {
-            display: none;
-            text-align: center;
-            margin: 20px 0;
-        }
-        .error {
-            color: red;
-            margin: 10px 0;
-        }
-        .progress-container {
-            margin-top: 20px;
-            margin-bottom: 20px;
-        }
-        .progress-bar {
-            width: 100%;
-            background-color: #f1f1f1;
-            border-radius: 4px;
-            overflow: hidden;
-        }
-        .progress-filled {
-            height: 20px;
-            background-color: #4CAF50;
-            text-align: center;
-            line-height: 20px;
-            color: white;
-            transition: width 0.3s;
-        }
-        .status-list {
-            margin-top: 10px;
-            max-height: 200px;
-            overflow-y: auto;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            padding: 10px;
-            background-color: #f9f9f9;
-        }
-        .status-item {
-            margin-bottom: 5px;
-            font-size: 14px;
-        }
-        .status-pending {
-            color: #888;
-        }
-        .status-processing {
-            color: #ff9800;
-        }
-        .status-success {
-            color: #4CAF50;
-        }
-        .status-error {
-            color: #f44336;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>顶流广告技术有限公司</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width:800px; margin:0 auto; padding:20px; background:#f5f5f5; }
+    .container { background:#fff; padding:20px; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.1); }
+    .input-group { margin-bottom:20px; }
+    input, button { font-size:16px; padding:10px; }
+    button { background:#4CAF50; color:#fff; border:none; border-radius:4px; cursor:pointer; }
+    button:hover { background:#45a049; }
+    .results, .error, .loading { margin-top:20px; }
+    .error { color:#f44336; }
+    .loading { text-align:center; }
+    .city-item { display:flex; justify-content:space-between; padding:10px; border-bottom:1px solid #eee; }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h1>顶流广告技术有限公司</h1>
-        <div class="input-group">
-            <input type="text" id="addressInput" placeholder="请输入店铺地址">
-            <button onclick="calculateDistances()">点击查询</button>
-        </div>
-        <div class="note" style="margin-top: 10px; font-size: 14px; color: #666;">
-            Ski定点查询
-        </div>
-        <div id="loading" class="loading">正在计算中...</div>
-        <div id="error" class="error"></div>
-        <div id="progress-container" class="progress-container" style="display: none;">
-            <div class="progress-bar">
-                <div id="progress-filled" class="progress-filled" style="width: 0%">0%</div>
-            </div>
-            <div id="status-list" class="status-list"></div>
-        </div>
-        <div id="results" class="results"></div>
+  <div class="container">
+    <h1>顶流广告技术有限公司</h1>
+    <div class="input-group">
+      <input id="addressInput" type="text" placeholder="请输入店铺地址" />
+      <button id="btnSearch">点击查询</button>
+      <div style="margin-top:8px;color:#666;">Ski定点查询</div>
     </div>
 
-    <script src="github-api-storage.js"></script>
-    <script>
-        // 警告：这里直接暴露了 API 密钥，在生产环境中应该使用后端服务来保护密钥
-        const LOCATIONIQ_KEYS = [
-            'pk.7a610aa57d0d98f9e069f4060b882135',
-            'pk.8d623bbfe7c58d6fe46c73ff34aad01f',
-            'pk.ee34ef023b0a61d9bcb6205c6372e4a7',
-            'pk.b0de4a0841c2547ad5724f78f3acdcbc',
-            'pk.7d611d26ef05fc49cffe2da526053667',
-            'pk.da33d9653e55e08fbcfe2da526053667',
-            'pk.9dc953462b77df2460c7f05732706958',
-            'pk.45f647b1a1780e83133ecacaaf1cd153',
-            'pk.bffb77dd0872aa9d9109a5c15095cef6'
-        ];
-        
-        let currentKeyIndex = 0;
-        
-        function getNextApiKey() {
-            const key = LOCATIONIQ_KEYS[currentKeyIndex];
-            currentKeyIndex = (currentKeyIndex + 1) % LOCATIONIQ_KEYS.length;
-            return key;
+    <div id="loading" class="loading" style="display:none;">正在计算中...</div>
+    <div id="error" class="error"></div>
+    <div id="results" class="results"></div>
+  </div>
+
+  <script>
+    const btn = document.getElementById('btnSearch');
+    const loadingEl = document.getElementById('loading');
+    const errorEl   = document.getElementById('error');
+    const resultsEl = document.getElementById('results');
+
+    // 调用 Worker 代理的地理编码接口，提取全州名小写
+    async function geocodeAddress(address) {
+      const url = `/api/proxy/v1/search.php?` +
+                  `q=${encodeURIComponent(address)}` +
+                  `&format=json&countrycodes=us&addressdetails=1`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`地理编码失败：${resp.status}`);
+      const arr = await resp.json();
+      if (!Array.isArray(arr) || arr.length === 0) {
+        throw new Error('未找到匹配地址');
+      }
+      const { lat, lon, address: addr } = arr[0];
+      if (!addr.state) {
+        throw new Error('API 未返回州信息，无法继续');
+      }
+      // 使用全州名小写作为 key
+      return { lat, lon, state: addr.state.toLowerCase() };
+    }
+
+    // 调用 Worker 代理的矩阵行程时间接口
+    async function calculateDrivingTime(orig, dest) {
+      const path = `${orig.lon},${orig.lat};${dest.lon},${dest.lat}`;
+      const url = `/api/proxy/v1/matrix/driving/${path}?annotations=distance,duration`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`矩阵请求失败：${resp.status}`);
+      const data = await resp.json();
+      if (!data.durations?.[0]?.[1]) {
+        throw new Error('API 未返回持续时间');
+      }
+      const minutes = Math.round(data.durations[0][1] / 60);
+      const miles   = ((data.distances?.[0]?.[1] || 0) / 1609.34).toFixed(1);
+      return { duration: minutes, distance: parseFloat(miles) };
+    }
+
+    // 主函数：计算距离并渲染结果
+    async function calculateDistances() {
+      const addr = document.getElementById('addressInput').value.trim();
+      if (!addr) {
+        errorEl.textContent = '请输入店铺地址';
+        return;
+      }
+      errorEl.textContent = '';
+      resultsEl.innerHTML = '';
+      loadingEl.style.display = '';
+
+      try {
+        // 1. 获取店铺坐标及州
+        const store = await geocodeAddress(addr);
+
+        // 2. 加载 skipCities.json，依据州名取出城市列表
+        const raw = await fetch('skipCities.json');
+        const allCities = await raw.json();
+        const cities = allCities[store.state] || [];
+        if (!cities.length) {
+          throw new Error(`未找到 "${store.state}" 州的城市数据，请检查 skipCities.json`);
         }
 
-        let citiesData = null;
-        let dataLoaded = false;
-        let isLoading = false;
-        const MAX_CONCURRENT_REQUESTS = LOCATIONIQ_KEYS.length;
+        // 3. 并行请求每个城市的行程时间
+        const list = await Promise.all(cities.map(async city => {
+          const dest = await geocodeAddress(`${city}, ${store.state}`);
+          const info = await calculateDrivingTime(store, dest);
+          return { city, ...info };
+        }));
 
-        const stateAbbreviations = {
-            "AL": "alabama",
-            // ... other states ...
-            "WY": "wyoming",
-            "DC": "district of columbia"
-        };
+        // 4. 排序并显示
+        list.sort((a, b) => a.distance - b.distance);
+        resultsEl.innerHTML = list.map(r =>
+          `<div class="city-item">
+             <span>${r.city}</span>
+             <span>${r.distance} 英里 / ${r.duration} 分钟</span>
+             <a href="https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(addr)}&destination=${encodeURIComponent(r.city + ', ' + store.state)}" target="_blank">
+               <button>导航</button>
+             </a>
+           </div>`
+        ).join('');
+      } catch (e) {
+        errorEl.textContent = e.message;
+      } finally {
+        loadingEl.style.display = 'none';
+      }
+    }
 
-        window.onload = function() {
-            if (GitHubApiStorage.hasValidToken()) {
-                console.log('GitHub令牌已设置，将使用GitHub API存储数据');
-            } else {
-                console.warn('未找到有效的GitHub令牌，无法使用GitHub API存储数据');
-            }
-            loadCitiesData();
-        };
-        
-        loadCitiesData();
-
-        async function loadCitiesData() {
-            if (isLoading) return;
-            isLoading = true;
-            document.getElementById('error').textContent = '正在加载城市数据...';
-            try {
-                const response = await fetch('skipCities.json');
-                if (!response.ok) throw new Error(`加载城市数据失败: ${response.status} ${response.statusText}`);
-                const text = await response.text();
-                citiesData = JSON.parse(text);
-                dataLoaded = true;
-                document.getElementById('error').textContent = '';
-            } catch (error) {
-                document.getElementById('error').textContent = `无法加载城市数据: ${error.message}，请刷新页面重试`;
-            } finally {
-                isLoading = false;
-            }
-        }
-
-        function delay(ms) {
-            return new Promise(resolve => setTimeout(resolve, ms));
-        }
-
-        async function fetchWithRetry(url, retries = 3, delayMs = 1000) {
-            let lastError;
-            let triedKeys = new Set();
-            const baseUrl = url.replace(/key=[^&]+/, 'key=API_KEY_PLACEHOLDER');
-            while (triedKeys.size < LOCATIONIQ_KEYS.length) {
-                const currentKey = getNextApiKey();
-                if (triedKeys.has(currentKey)) continue;
-                triedKeys.add(currentKey);
-                const requestUrl = baseUrl.replace('API_KEY_PLACEHOLDER', currentKey);
-                if (currentKeyIndex > 0 && delayMs) await delay(delayMs);
-                for (let i = 0; i < retries; i++) {
-                    try {
-                        const response = await fetch(requestUrl);
-                        if (response.ok) {
-                            try { GitHubApiStorage.recordApiRequest(currentKey); } catch {}
-                            return response;
-                        } else if (response.status === 429) {
-                            break;
-                        } else {
-                            lastError = new Error(`HTTP error! status: ${response.status}`);
-                            if (i === retries - 1) break;
-                        }
-                    } catch (error) {
-                        lastError = error;
-                        if (i === retries - 1) break;
-                    }
-                }
-            }
-            throw lastError || new Error('所有API密钥请求都失败了');
-        }
-
-        async function geocodeAddress(address) {
-            // ... geocoding logic ...
-        }
-
-        async function calculateDrivingTime(origin, destination) {
-            // ... driving time logic ...
-        }
-
-        function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
-            // ... haversine formula ...
-        }
-
-        class RequestQueue {
-            // ... queue implementation ...
-        }
-
-        async function calculateDistances() {
-            // ... main logic ...
-        }
-
-        function showError(message) {
-            const errorDiv = document.getElementById('error');
-            errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
-            document.getElementById('loading').style.display = 'none';
-        }
-    </script>
-    <footer style="text-align: center; margin-top: 30px; padding: 15px; border-top: 1px solid #ddd; color: #666; font-size: 12px;">
-        <p>© 2023-2024 顶流广告技术有限公司 版权所有</p>
-        <p>技术支持：Ski定点查询系统</p>
-    </footer>
+    btn.addEventListener('click', calculateDistances);
+  </script>
 </body>
 </html>
