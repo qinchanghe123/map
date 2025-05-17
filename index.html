@@ -14,7 +14,7 @@
     .results, .error, .loading { margin-top:20px; }
     .error { color:#f44336; }
     .loading { text-align:center; }
-    .city-item { display:flex; justify-content:space-between; padding:10px; border-bottom:1px solid #eee; }
+    .city-item { display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid #eee; }
   </style>
 </head>
 <body>
@@ -25,101 +25,114 @@
       <button id="btnSearch">点击查询</button>
       <div style="margin-top:8px;color:#666;">Ski定点查询</div>
     </div>
-
     <div id="loading" class="loading" style="display:none;">正在计算中...</div>
     <div id="error" class="error"></div>
     <div id="results" class="results"></div>
   </div>
 
-  <script>
-    const btn = document.getElementById('btnSearch');
-    const loadingEl = document.getElementById('loading');
-    const errorEl   = document.getElementById('error');
-    const resultsEl = document.getElementById('results');
+<script>
+const GOOGLE_API_KEY = "AIzaSyASFANcoyPfMKVQFjgd6Ajz7UdXXkCeB3w";
 
-    // 调用 Worker 代理的地理编码接口，提取全州名小写
-    async function geocodeAddress(address) {
-      const url = `/api/proxy/v1/search.php?` +
-                  `q=${encodeURIComponent(address)}` +
-                  `&format=json&countrycodes=us&addressdetails=1`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`地理编码失败：${resp.status}`);
-      const arr = await resp.json();
-      if (!Array.isArray(arr) || arr.length === 0) {
-        throw new Error('未找到匹配地址');
-      }
-      const { lat, lon, address: addr } = arr[0];
-      if (!addr.state) {
-        throw new Error('API 未返回州信息，无法继续');
-      }
-      // 使用全州名小写作为 key
-      return { lat, lon, state: addr.state.toLowerCase() };
+async function geocodeAddress(address) {
+  // Google Geocoding API: 获取经纬度和州名
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_API_KEY}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('网络错误：' + resp.status);
+  const data = await resp.json();
+  if (data.status !== "OK" || !data.results || !data.results.length) throw new Error('未找到匹配地址');
+  const result = data.results[0];
+  let state = "";
+  for (const c of result.address_components) {
+    if (c.types.includes("administrative_area_level_1")) {
+      state = c.long_name;
+      break;
     }
+  }
+  if (!state) throw new Error("未能识别州名，无法继续");
+  return {
+    lat: result.geometry.location.lat,
+    lng: result.geometry.location.lng,
+    state: state.toLowerCase(),
+    stateRaw: state
+  };
+}
 
-    // 调用 Worker 代理的矩阵行程时间接口
-    async function calculateDrivingTime(orig, dest) {
-      const path = `${orig.lon},${orig.lat};${dest.lon},${dest.lat}`;
-      const url = `/api/proxy/v1/matrix/driving/${path}?annotations=distance,duration`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`矩阵请求失败：${resp.status}`);
-      const data = await resp.json();
-      if (!data.durations?.[0]?.[1]) {
-        throw new Error('API 未返回持续时间');
-      }
-      const minutes = Math.round(data.durations[0][1] / 60);
-      const miles   = ((data.distances?.[0]?.[1] || 0) / 1609.34).toFixed(1);
-      return { duration: minutes, distance: parseFloat(miles) };
-    }
+async function getCitiesInState(stateKey) {
+  // 加载 skipCities.json 并取出对应州的所有城市
+  const resp = await fetch('skipCities.json');
+  const data = await resp.json();
+  const cities = data[stateKey];
+  if (!cities || !cities.length) throw new Error(`未找到 "${stateKey}" 州的城市数据`);
+  return cities;
+}
 
-    // 主函数：计算距离并渲染结果
-    async function calculateDistances() {
-      const addr = document.getElementById('addressInput').value.trim();
-      if (!addr) {
-        errorEl.textContent = '请输入店铺地址';
-        return;
-      }
-      errorEl.textContent = '';
-      resultsEl.innerHTML = '';
-      loadingEl.style.display = '';
+async function getDistanceMatrix(origin, destinations, state) {
+  // Google Distance Matrix API：批量查出每个目的地的距离/时长
+  // 25个城市一组
+  const results = [];
+  for (let i = 0; i < destinations.length; i += 25) {
+    const group = destinations.slice(i, i + 25);
+    const destQuery = group.map(city => encodeURIComponent(city + ", " + state)).join("|");
+    const url = `https://maps.googleapis.com/maps/api/distancematrix/json?units=imperial&origins=${origin}&destinations=${destQuery}&key=${GOOGLE_API_KEY}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.status !== "OK") throw new Error("Google距离服务出错: " + data.status);
+    if (!data.rows[0].elements || data.rows[0].elements.length !== group.length) throw new Error("返回结果数不一致");
+    group.forEach((city, idx) => {
+      const elem = data.rows[0].elements[idx];
+      results.push({
+        city,
+        distance: elem.status === "OK" ? elem.distance.text : "未知",
+        duration: elem.status === "OK" ? elem.duration.text : "未知",
+        distanceVal: elem.status === "OK" ? elem.distance.value : Infinity
+      });
+    });
+  }
+  return results;
+}
 
-      try {
-        // 1. 获取店铺坐标及州
-        const store = await geocodeAddress(addr);
+const btn = document.getElementById('btnSearch');
+const loadingEl = document.getElementById('loading');
+const errorEl   = document.getElementById('error');
+const resultsEl = document.getElementById('results');
 
-        // 2. 加载 skipCities.json，依据州名取出城市列表
-        const raw = await fetch('skipCities.json');
-        const allCities = await raw.json();
-        const cities = allCities[store.state] || [];
-        if (!cities.length) {
-          throw new Error(`未找到 "${store.state}" 州的城市数据，请检查 skipCities.json`);
-        }
+btn.onclick = async function() {
+  errorEl.textContent = '';
+  resultsEl.innerHTML = '';
+  loadingEl.style.display = '';
+  try {
+    const input = document.getElementById('addressInput').value.trim();
+    if (!input) throw new Error("请输入店铺地址");
 
-        // 3. 并行请求每个城市的行程时间
-        const list = await Promise.all(cities.map(async city => {
-          const dest = await geocodeAddress(`${city}, ${store.state}`);
-          const info = await calculateDrivingTime(store, dest);
-          return { city, ...info };
-        }));
+    // 1. 获取输入地址的坐标和州
+    const {lat, lng, state, stateRaw} = await geocodeAddress(input);
 
-        // 4. 排序并显示
-        list.sort((a, b) => a.distance - b.distance);
-        resultsEl.innerHTML = list.map(r =>
-          `<div class="city-item">
-             <span>${r.city}</span>
-             <span>${r.distance} 英里 / ${r.duration} 分钟</span>
-             <a href="https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(addr)}&destination=${encodeURIComponent(r.city + ', ' + store.state)}" target="_blank">
-               <button>导航</button>
-             </a>
-           </div>`
-        ).join('');
-      } catch (e) {
-        errorEl.textContent = e.message;
-      } finally {
-        loadingEl.style.display = 'none';
-      }
-    }
+    // 2. 查 skipCities.json 下该州的所有城市
+    const cities = await getCitiesInState(state);
 
-    btn.addEventListener('click', calculateDistances);
-  </script>
+    // 3. 查询所有城市与输入地址的驾车距离
+    const distances = await getDistanceMatrix(`${lat},${lng}`, cities, stateRaw);
+
+    // 4. 按距离升序
+    distances.sort((a, b) => a.distanceVal - b.distanceVal);
+
+    // 5. 显示
+    resultsEl.innerHTML = distances.map(r =>
+      `<div class="city-item">
+        <span>${r.city}</span>
+        <span>${r.distance} / ${r.duration}</span>
+        <a href="https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(input)}&destination=${encodeURIComponent(r.city + ', ' + stateRaw)}" target="_blank">
+          <button>导航</button>
+        </a>
+      </div>`
+    ).join('');
+
+  } catch (e) {
+    errorEl.textContent = e.message;
+  } finally {
+    loadingEl.style.display = 'none';
+  }
+};
+</script>
 </body>
 </html>
