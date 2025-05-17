@@ -16,6 +16,8 @@
     .loading { text-align:center; }
     .city-item { display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid #eee; }
   </style>
+  <!-- 引入 Google Maps JavaScript SDK -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyASFANcoyPfMKVQFjgd6Ajz7UdXXkCeB3w&libraries=places"></script>
 </head>
 <body>
   <div class="container">
@@ -31,34 +33,32 @@
   </div>
 
 <script>
-const GOOGLE_API_KEY = "AIzaSyASFANcoyPfMKVQFjgd6Ajz7UdXXkCeB3w";
-
 async function geocodeAddress(address) {
-  // Google Geocoding API: 获取经纬度和州名
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_API_KEY}`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error('网络错误：' + resp.status);
-  const data = await resp.json();
-  if (data.status !== "OK" || !data.results || !data.results.length) throw new Error('未找到匹配地址');
-  const result = data.results[0];
-  let state = "";
-  for (const c of result.address_components) {
-    if (c.types.includes("administrative_area_level_1")) {
-      state = c.long_name;
-      break;
-    }
-  }
-  if (!state) throw new Error("未能识别州名，无法继续");
-  return {
-    lat: result.geometry.location.lat,
-    lng: result.geometry.location.lng,
-    state: state.toLowerCase(),
-    stateRaw: state
-  };
+  // 用 Google Geocoder 解析地址到经纬度与州
+  return new Promise((resolve, reject) => {
+    const geocoder = new google.maps.Geocoder();
+    geocoder.geocode({address}, (results, status) => {
+      if (status !== "OK" || !results.length) return reject(new Error('未找到匹配地址'));
+      const result = results[0];
+      let state = "";
+      for (const c of result.address_components) {
+        if (c.types.includes("administrative_area_level_1")) {
+          state = c.long_name;
+          break;
+        }
+      }
+      if (!state) return reject(new Error("未能识别州名，无法继续"));
+      resolve({
+        lat: result.geometry.location.lat(),
+        lng: result.geometry.location.lng(),
+        state: state.toLowerCase(),
+        stateRaw: state
+      });
+    });
+  });
 }
 
 async function getCitiesInState(stateKey) {
-  // 加载 skipCities.json 并取出对应州的所有城市
   const resp = await fetch('skipCities.json');
   const data = await resp.json();
   const cities = data[stateKey];
@@ -66,29 +66,36 @@ async function getCitiesInState(stateKey) {
   return cities;
 }
 
-async function getDistanceMatrix(origin, destinations, state) {
-  // Google Distance Matrix API：批量查出每个目的地的距离/时长
-  // 25个城市一组
-  const results = [];
-  for (let i = 0; i < destinations.length; i += 25) {
-    const group = destinations.slice(i, i + 25);
-    const destQuery = group.map(city => encodeURIComponent(city + ", " + state)).join("|");
-    const url = `https://maps.googleapis.com/maps/api/distancematrix/json?units=imperial&origins=${origin}&destinations=${destQuery}&key=${GOOGLE_API_KEY}`;
-    const resp = await fetch(url);
-    const data = await resp.json();
-    if (data.status !== "OK") throw new Error("Google距离服务出错: " + data.status);
-    if (!data.rows[0].elements || data.rows[0].elements.length !== group.length) throw new Error("返回结果数不一致");
-    group.forEach((city, idx) => {
-      const elem = data.rows[0].elements[idx];
-      results.push({
-        city,
-        distance: elem.status === "OK" ? elem.distance.text : "未知",
-        duration: elem.status === "OK" ? elem.duration.text : "未知",
-        distanceVal: elem.status === "OK" ? elem.distance.value : Infinity
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+function getDistancesMatrixSDK(origin, destinations, stateRaw) {
+  return new Promise((resolve, reject) => {
+    const service = new google.maps.DistanceMatrixService();
+    service.getDistanceMatrix({
+      origins: [origin],
+      destinations: destinations.map(city => `${city}, ${stateRaw}`),
+      travelMode: google.maps.TravelMode.DRIVING,
+      unitSystem: google.maps.UnitSystem.IMPERIAL,
+    }, (response, status) => {
+      if (status !== "OK") return reject(new Error("Google距离服务出错: " + status));
+      if (!response.rows[0].elements || response.rows[0].elements.length !== destinations.length)
+        return reject(new Error("返回结果数不一致"));
+      const list = destinations.map((city, idx) => {
+        const elem = response.rows[0].elements[idx];
+        return {
+          city,
+          distance: elem.status === "OK" ? elem.distance.text : "未知",
+          duration: elem.status === "OK" ? elem.duration.text : "未知",
+          distanceVal: elem.status === "OK" ? elem.distance.value : Infinity
+        };
       });
+      resolve(list);
     });
-  }
-  return results;
+  });
 }
 
 const btn = document.getElementById('btnSearch');
@@ -110,14 +117,19 @@ btn.onclick = async function() {
     // 2. 查 skipCities.json 下该州的所有城市
     const cities = await getCitiesInState(state);
 
-    // 3. 查询所有城市与输入地址的驾车距离
-    const distances = await getDistanceMatrix(`${lat},${lng}`, cities, stateRaw);
+    // 3. 用 Google SDK 查询所有城市与输入地址的驾车距离（分组，每组最多25个）
+    const allResults = [];
+    const cityChunks = chunk(cities, 25);
+    for (const chunkCities of cityChunks) {
+      const result = await getDistancesMatrixSDK(`${lat},${lng}`, chunkCities, stateRaw);
+      allResults.push(...result);
+    }
 
     // 4. 按距离升序
-    distances.sort((a, b) => a.distanceVal - b.distanceVal);
+    allResults.sort((a, b) => a.distanceVal - b.distanceVal);
 
     // 5. 显示
-    resultsEl.innerHTML = distances.map(r =>
+    resultsEl.innerHTML = allResults.map(r =>
       `<div class="city-item">
         <span>${r.city}</span>
         <span>${r.distance} / ${r.duration}</span>
