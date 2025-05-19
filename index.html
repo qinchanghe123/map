@@ -19,6 +19,30 @@
     th { background: #f0f0f0; }
     a.nav-link { color: #1a73e8; text-decoration: underline; }
     a.nav-link:hover { color: #0c51a1; }
+    /* 进度条样式 */
+    .progress-container {
+      width: 100%;
+      background: #eee;
+      border-radius: 10px;
+      height: 18px;
+      margin: 10px 0 12px 0;
+      overflow: hidden;
+      box-shadow: 0 1px 3px #ddd inset;
+      display: none;
+    }
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #4CAF50 60%, #81C784 100%);
+      width: 0;
+      transition: width 0.3s;
+      border-radius: 10px 0 0 10px;
+    }
+    .progress-text {
+      margin-top: 4px;
+      color: #555;
+      font-size: 14px;
+      text-align: center;
+    }
   </style>
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyASFANcoyPfMKVQFjgd6Ajz7UdXXkCeB3w&libraries=places"></script>
 </head>
@@ -30,6 +54,11 @@
       <button id="btnSearch">点击查询</button>
       <div style="margin-top:8px;color:#666;">Ski定点查询</div>
     </div>
+    <!-- 进度条 -->
+    <div class="progress-container" id="progressContainer">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <div class="progress-text" id="progressText"></div>
     <div id="loading" class="loading" style="display:none;">正在计算中...</div>
     <div id="error" class="error"></div>
     <div id="results" class="results"></div>
@@ -105,10 +134,17 @@ const loadingEl = document.getElementById('loading');
 const errorEl   = document.getElementById('error');
 const resultsEl = document.getElementById('results');
 
+const progressContainer = document.getElementById('progressContainer');
+const progressBar = document.getElementById('progressBar');
+const progressText = document.getElementById('progressText');
+
 btn.onclick = async function() {
   errorEl.textContent = '';
   resultsEl.innerHTML = '';
   loadingEl.style.display = '';
+  progressContainer.style.display = 'none';
+  progressBar.style.width = '0%';
+  progressText.textContent = '';
   try {
     const input = document.getElementById('addressInput').value.trim();
     if (!input) throw new Error("请输入店铺地址");
@@ -118,14 +154,27 @@ btn.onclick = async function() {
 
     const allResults = [];
     const cityChunks = chunk(cities, 25);
-    for (const chunkCities of cityChunks) {
-      const result = await getDistancesMatrixSDK(`${lat},${lng}`, chunkCities, stateRaw);
+    const totalChunks = cityChunks.length;
+
+    progressContainer.style.display = '';
+    progressText.textContent = `已完成 0 / ${totalChunks} 组查询`;
+
+    for (let i = 0; i < totalChunks; ++i) {
+      const chunkCities = cityChunks[i];
+      const result = await getDistancesMatrixSDK(
+        `${lat},${lng}`,
+        chunkCities,
+        stateRaw
+      );
       allResults.push(...result);
+      // 更新进度条
+      const percent = Math.round(((i + 1) / totalChunks) * 100);
+      progressBar.style.width = percent + "%";
+      progressText.textContent = `已完成 ${i + 1} / ${totalChunks} 组查询（${percent}%）`;
     }
 
     allResults.sort((a, b) => a.distanceVal - b.distanceVal);
 
-    // 输出为表格形式
     let html = `<table>
       <thead>
         <tr>
@@ -150,9 +199,17 @@ btn.onclick = async function() {
     </table>`;
 
     resultsEl.innerHTML = html;
+    progressBar.style.width = "100%";
+    progressText.textContent = `全部完成 (${totalChunks} 组，共${allResults.length}个城市)`;
+    setTimeout(() => {
+      progressContainer.style.display = 'none';
+      progressText.textContent = '';
+    }, 1800); // 1.8秒后自动隐藏进度
 
   } catch (e) {
     errorEl.textContent = e.message;
+    progressContainer.style.display = 'none';
+    progressText.textContent = '';
   } finally {
     loadingEl.style.display = 'none';
   }
