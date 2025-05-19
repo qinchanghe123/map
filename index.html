@@ -19,7 +19,6 @@
     th { background: #f0f0f0; }
     a.nav-link { color: #1a73e8; text-decoration: underline; }
     a.nav-link:hover { color: #0c51a1; }
-    /* 进度条样式 */
     .progress-container {
       width: 100%;
       background: #eee;
@@ -54,7 +53,6 @@
       <button id="btnSearch">点击查询</button>
       <div style="margin-top:8px;color:#666;">Ski定点查询</div>
     </div>
-    <!-- 进度条 -->
     <div class="progress-container" id="progressContainer">
       <div class="progress-bar" id="progressBar"></div>
     </div>
@@ -65,6 +63,8 @@
   </div>
 
 <script>
+const MAX_CONCURRENT = 15; // 最大同时并发的API请求数，你可以根据需求调整
+
 async function geocodeAddress(address) {
   return new Promise((resolve, reject) => {
     const geocoder = new google.maps.Geocoder();
@@ -97,35 +97,62 @@ async function getCitiesInState(stateKey) {
   return cities;
 }
 
-function chunk(arr, size) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
-function getDistancesMatrixSDK(origin, destinations, stateRaw) {
-  return new Promise((resolve, reject) => {
+// 单个城市请求
+function getDistanceForCity(origin, city, stateRaw) {
+  return new Promise((resolve) => {
     const service = new google.maps.DistanceMatrixService();
     service.getDistanceMatrix({
       origins: [origin],
-      destinations: destinations.map(city => `${city}, ${stateRaw}`),
+      destinations: [`${city}, ${stateRaw}`],
       travelMode: google.maps.TravelMode.DRIVING,
       unitSystem: google.maps.UnitSystem.IMPERIAL,
     }, (response, status) => {
-      if (status !== "OK") return reject(new Error("Google距离服务出错: " + status));
-      if (!response.rows[0].elements || response.rows[0].elements.length !== destinations.length)
-        return reject(new Error("返回结果数不一致"));
-      const list = destinations.map((city, idx) => {
-        const elem = response.rows[0].elements[idx];
-        return {
-          city,
-          distance: elem.status === "OK" ? elem.distance.text : "未知",
-          duration: elem.status === "OK" ? elem.duration.text : "未知",
-          distanceVal: elem.status === "OK" ? elem.distance.value : Infinity
-        };
-      });
-      resolve(list);
+      let result = {
+        city,
+        distance: "未知",
+        duration: "未知",
+        distanceVal: Infinity
+      };
+      if (status === "OK" && response.rows[0].elements[0].status === "OK") {
+        const elem = response.rows[0].elements[0];
+        result.distance = elem.distance.text;
+        result.duration = elem.duration.text;
+        result.distanceVal = elem.distance.value;
+      }
+      resolve(result);
     });
+  });
+}
+
+// 并发池
+async function concurrentPool(tasks, poolLimit, onProgress) {
+  let i = 0;
+  let results = [];
+  let active = 0;
+
+  return new Promise((resolve, reject) => {
+    function next() {
+      while (active < poolLimit && i < tasks.length) {
+        active++;
+        const current = i++;
+        tasks[current]().then(res => {
+          results[current] = res;
+          active--;
+          onProgress && onProgress(results.filter(x => x).length, tasks.length);
+          if (results.length === tasks.length && results.every(x => x)) {
+            resolve(results);
+          } else {
+            next();
+          }
+        }).catch(err => {
+          results[current] = {city: tasks[current].city, distance: "查询失败", duration: "查询失败", distanceVal: Infinity};
+          active--;
+          onProgress && onProgress(results.filter(x => x).length, tasks.length);
+          next();
+        });
+      }
+    }
+    next();
   });
 }
 
@@ -133,7 +160,6 @@ const btn = document.getElementById('btnSearch');
 const loadingEl = document.getElementById('loading');
 const errorEl   = document.getElementById('error');
 const resultsEl = document.getElementById('results');
-
 const progressContainer = document.getElementById('progressContainer');
 const progressBar = document.getElementById('progressBar');
 const progressText = document.getElementById('progressText');
@@ -152,26 +178,26 @@ btn.onclick = async function() {
     const {lat, lng, state, stateRaw} = await geocodeAddress(input);
     const cities = await getCitiesInState(state);
 
-    const allResults = [];
-    const cityChunks = chunk(cities, 25);
-    const totalChunks = cityChunks.length;
-
     progressContainer.style.display = '';
-    progressText.textContent = `已完成 0 / ${totalChunks} 组查询`;
+    progressText.textContent = `已完成 0 / ${cities.length} 城市`;
 
-    for (let i = 0; i < totalChunks; ++i) {
-      const chunkCities = cityChunks[i];
-      const result = await getDistancesMatrixSDK(
-        `${lat},${lng}`,
-        chunkCities,
-        stateRaw
-      );
-      allResults.push(...result);
-      // 更新进度条
-      const percent = Math.round(((i + 1) / totalChunks) * 100);
-      progressBar.style.width = percent + "%";
-      progressText.textContent = `已完成 ${i + 1} / ${totalChunks} 组查询（${percent}%）`;
-    }
+    // 创建所有任务（每个城市1个API请求）
+    const tasks = cities.map(city => {
+      const fn = () => getDistanceForCity(`${lat},${lng}`, city, stateRaw);
+      fn.city = city;
+      return fn;
+    });
+
+    // 并发池执行
+    const allResults = await concurrentPool(
+      tasks,
+      MAX_CONCURRENT,
+      (finished, total) => {
+        const percent = Math.round((finished / total) * 100);
+        progressBar.style.width = percent + "%";
+        progressText.textContent = `已完成 ${finished} / ${total} 城市（${percent}%）`;
+      }
+    );
 
     allResults.sort((a, b) => a.distanceVal - b.distanceVal);
 
@@ -200,11 +226,11 @@ btn.onclick = async function() {
 
     resultsEl.innerHTML = html;
     progressBar.style.width = "100%";
-    progressText.textContent = `全部完成 (${totalChunks} 组，共${allResults.length}个城市)`;
+    progressText.textContent = `全部完成 (${cities.length} 城市)`;
     setTimeout(() => {
       progressContainer.style.display = 'none';
       progressText.textContent = '';
-    }, 1800); // 1.8秒后自动隐藏进度
+    }, 2000);
 
   } catch (e) {
     errorEl.textContent = e.message;
