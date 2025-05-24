@@ -65,6 +65,12 @@
 <script>
 const MAX_CONCURRENT = 15; // 最大同时并发的API请求数，你可以根据需求调整
 
+// 格式化州名：将 "new york" 转换为 "new-york"
+function formatStateName(state) {
+  return state.toLowerCase().replace(/\s+/g, '-');
+}
+
+// 根据地址获取经纬度和州名
 async function geocodeAddress(address) {
   return new Promise((resolve, reject) => {
     const geocoder = new google.maps.Geocoder();
@@ -79,16 +85,21 @@ async function geocodeAddress(address) {
         }
       }
       if (!state) return reject(new Error("未能识别州名，无法继续"));
+
+      // 使用格式化函数将州名转换为统一格式
+      state = formatStateName(state);
+
       resolve({
         lat: result.geometry.location.lat(),
         lng: result.geometry.location.lng(),
-        state: state.toLowerCase(),
+        state: state,
         stateRaw: state
       });
     });
   });
 }
 
+// 从本地JSON文件加载城市数据
 async function getCitiesInState(stateKey) {
   const resp = await fetch('skipCities.json');
   const data = await resp.json();
@@ -97,7 +108,7 @@ async function getCitiesInState(stateKey) {
   return cities;
 }
 
-// 单个城市请求
+// 获取城市之间的距离
 function getDistanceForCity(origin, city, stateRaw) {
   return new Promise((resolve) => {
     const service = new google.maps.DistanceMatrixService();
@@ -156,6 +167,7 @@ async function concurrentPool(tasks, poolLimit, onProgress) {
   });
 }
 
+// 事件处理
 const btn = document.getElementById('btnSearch');
 const loadingEl = document.getElementById('loading');
 const errorEl   = document.getElementById('error');
