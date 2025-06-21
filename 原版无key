@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>顶流广告技术有限公司</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width:800px; margin:0 auto; padding:20px; background:#f5f5f5; }
+    .container { background:#fff; padding:20px; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.1); }
+    .input-group { margin-bottom:20px; }
+    input, button { font-size:16px; padding:10px; }
+    button { background:#4CAF50; color:#fff; border:none; border-radius:4px; cursor:pointer; }
+    button:hover { background:#45a049; }
+    .results, .error, .loading { margin-top:20px; }
+    .error { color:#f44336; }
+    .loading { text-align:center; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
+    th { background: #f0f0f0; }
+    a.nav-link { color: #1a73e8; text-decoration: underline; }
+    a.nav-link:hover { color: #0c51a1; }
+    .progress-container {
+      width: 100%;
+      background: #eee;
+      border-radius: 10px;
+      height: 18px;
+      margin: 10px 0 12px 0;
+      overflow: hidden;
+      box-shadow: 0 1px 3px #ddd inset;
+      display: none;
+    }
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #4CAF50 60%, #81C784 100%);
+      width: 0;
+      transition: width 0.3s;
+      border-radius: 10px 0 0 10px;
+    }
+    .progress-text {
+      margin-top: 4px;
+      color: #555;
+      font-size: 14px;
+      text-align: center;
+    }
+  </style>
+  <script src="https://maps.googleapis.com/maps/api/js?key="></script>
+</head>
+<body>
+  <div class="container">
+    <h1>顶流广告技术有限公司</h1>
+    <div class="input-group">
+      <input id="addressInput" type="text" placeholder="请输入店铺地址" />
+      <button id="btnSearch">点击查询</button>
+      <div style="margin-top:8px;color:#666;">Ski定点查询</div>
+    </div>
+    <div class="progress-container" id="progressContainer">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <div class="progress-text" id="progressText"></div>
+    <div id="loading" class="loading" style="display:none;">正在计算中...</div>
+    <div id="error" class="error"></div>
+    <div id="results" class="results"></div>
+  </div>
+
+<script>
+const MAX_CONCURRENT = 15; // 最大同时并发的API请求数，你可以根据需求调整
+
+// 格式化州名：将 "new york" 转换为 "new-york"
+function formatStateName(state) {
+  return state.toLowerCase().replace(/\s+/g, '-');
+}
+
+// 根据地址获取经纬度和州名
+async function geocodeAddress(address) {
+  return new Promise((resolve, reject) => {
+    const geocoder = new google.maps.Geocoder();
+    geocoder.geocode({address}, (results, status) => {
+      if (status !== "OK" || !results.length) return reject(new Error('未找到匹配地址'));
+      const result = results[0];
+      let state = "";
+      for (const c of result.address_components) {
+        if (c.types.includes("administrative_area_level_1")) {
+          state = c.long_name;
+          break;
+        }
+      }
+      if (!state) return reject(new Error("未能识别州名，无法继续"));
+
+      // 使用格式化函数将州名转换为统一格式
+      state = formatStateName(state);
+
+      resolve({
+        lat: result.geometry.location.lat(),
+        lng: result.geometry.location.lng(),
+        state: state,
+        stateRaw: state
+      });
+    });
+  });
+}
+
+// 从本地JSON文件加载城市数据
+async function getCitiesInState(stateKey) {
+  const resp = await fetch('skipCities.json');
+  const data = await resp.json();
+  const cities = data[stateKey];
+  if (!cities || !cities.length) throw new Error(`未找到 "${stateKey}" 州的城市数据`);
+  return cities;
+}
+
+// 获取城市之间的距离
+function getDistanceForCity(origin, city, stateRaw) {
+  return new Promise((resolve) => {
+    const service = new google.maps.DistanceMatrixService();
+    service.getDistanceMatrix({
+      origins: [origin],
+      destinations: [`${city}, ${stateRaw}`],
+      travelMode: google.maps.TravelMode.DRIVING,
+      unitSystem: google.maps.UnitSystem.IMPERIAL,
+    }, (response, status) => {
+      let result = {
+        city,
+        distance: "未知",
+        duration: "未知",
+        distanceVal: Infinity
+      };
+      if (status === "OK" && response.rows[0].elements[0].status === "OK") {
+        const elem = response.rows[0].elements[0];
+        result.distance = elem.distance.text;
+        result.duration = elem.duration.text;
+        result.distanceVal = elem.distance.value;
+      }
+      resolve(result);
+    });
+  });
+}
+
+// 并发池
+async function concurrentPool(tasks, poolLimit, onProgress) {
+  let i = 0;
+  let results = [];
+  let active = 0;
+
+  return new Promise((resolve, reject) => {
+    function next() {
+      while (active < poolLimit && i < tasks.length) {
+        active++;
+        const current = i++;
+        tasks[current]().then(res => {
+          results[current] = res;
+          active--;
+          onProgress && onProgress(results.filter(x => x).length, tasks.length);
+          if (results.length === tasks.length && results.every(x => x)) {
+            resolve(results);
+          } else {
+            next();
+          }
+        }).catch(err => {
+          results[current] = {city: tasks[current].city, distance: "查询失败", duration: "查询失败", distanceVal: Infinity};
+          active--;
+          onProgress && onProgress(results.filter(x => x).length, tasks.length);
+          next();
+        });
+      }
+    }
+    next();
+  });
+}
+
+// 事件处理
+const btn = document.getElementById('btnSearch');
+const loadingEl = document.getElementById('loading');
+const errorEl   = document.getElementById('error');
+const resultsEl = document.getElementById('results');
+const progressContainer = document.getElementById('progressContainer');
+const progressBar = document.getElementById('progressBar');
+const progressText = document.getElementById('progressText');
+
+btn.onclick = async function() {
+  errorEl.textContent = '';
+  resultsEl.innerHTML = '';
+  loadingEl.style.display = '';
+  progressContainer.style.display = 'none';
+  progressBar.style.width = '0%';
+  progressText.textContent = '';
+  try {
+    const input = document.getElementById('addressInput').value.trim();
+    if (!input) throw new Error("请输入店铺地址");
+
+    const {lat, lng, state, stateRaw} = await geocodeAddress(input);
+    const cities = await getCitiesInState(state);
+
+    progressContainer.style.display = '';
+    progressText.textContent = `已完成 0 / ${cities.length} 城市`;
+
+    // 创建所有任务（每个城市1个API请求）
+    const tasks = cities.map(city => {
+      const fn = () => getDistanceForCity(`${lat},${lng}`, city, stateRaw);
+      fn.city = city;
+      return fn;
+    });
+
+    // 并发池执行
+    const allResults = await concurrentPool(
+      tasks,
+      MAX_CONCURRENT,
+      (finished, total) => {
+        const percent = Math.round((finished / total) * 100);
+        progressBar.style.width = percent + "%";
+        progressText.textContent = `已完成 ${finished} / ${total} 城市（${percent}%）`;
+      }
+    );
+
+    allResults.sort((a, b) => a.distanceVal - b.distanceVal);
+
+    let html = `<table>
+      <thead>
+        <tr>
+          <th>城市</th>
+          <th>距离</th>
+          <th>驾车所需时间</th>
+          <th>导航</th>
+        </tr>
+      </thead>
+      <tbody>
+      ${allResults.map(r => `
+        <tr>
+          <td>${r.city}</td>
+          <td>${r.distance}</td>
+          <td>${r.duration}</td>
+          <td>
+            <a class="nav-link" href="https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(input)}&destination=${encodeURIComponent(r.city + ', ' + stateRaw)}" target="_blank">导航</a>
+          </td>
+        </tr>
+      `).join('')}
+      </tbody>
+    </table>`;
+
+    resultsEl.innerHTML = html;
+    progressBar.style.width = "100%";
+    progressText.textContent = `全部完成 (${cities.length} 城市)`;
+    setTimeout(() => {
+      progressContainer.style.display = 'none';
+      progressText.textContent = '';
+    }, 2000);
+
+  } catch (e) {
+    errorEl.textContent = e.message;
+    progressContainer.style.display = 'none';
+    progressText.textContent = '';
+  } finally {
+    loadingEl.style.display = 'none';
+  }
+};
+</script>
+</body>
+</html>
