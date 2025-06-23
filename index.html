@@ -71,95 +71,71 @@
   </div>
 
 <script>
-const MAX_CONCURRENT = 15; // 最大同时并发的API请求数，你可以根据需求调整
-const REQUEST_TIMEOUT = 60000; // 60秒超时
+const MAX_CONCURRENT = 15;
+const REQUEST_TIMEOUT = 60000;
+const BATCH_SIZE = 25; // [新增] 定义API支持的最大批量
 
-// 检查Google Maps API是否可用
+// --- 辅助函数 ---
 function checkGoogleMapsAPI() {
   if (typeof google === 'undefined' || !google.maps) {
     throw new Error('API服务配额已耗尽，请稍后再试');
   }
-  
-  // 简单检查API key是否完全为空
-  const scriptSrc = document.querySelector('script[src*="maps.googleapis.com"]')?.src || '';
-  if (scriptSrc.includes('key=') && scriptSrc.match(/key=(&|$)/)) {
-    throw new Error('API服务配额已耗尽，请稍后再试');
-  }
 }
-
-// 创建带超时的Promise
 function withTimeout(promise, timeoutMs) {
   return Promise.race([
     promise,
-    new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('API服务响应超时，配额可能已耗尽')), timeoutMs)
-    )
+    new Promise((_, reject) => setTimeout(() => reject(new Error('API服务响应超时')), timeoutMs))
   ]);
 }
-
-// 格式化州名：将 "new york" 转换为 "new-york"
-function formatStateName(state) {
-  return state.toLowerCase().replace(/\s+/g, '-');
+// [新增] 数组分块函数，用于将城市列表按BATCH_SIZE分割
+function chunkArray(arr, size) {
+  const chunks = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
 }
 
-// 根据地址获取经纬度和州名
+
+// --- 核心功能函数 ---
+
+// 根据地址获取经纬度和州名 (无需修改)
 async function geocodeAddress(address) {
   checkGoogleMapsAPI();
-  
   const geocodePromise = new Promise((resolve, reject) => {
     const geocoder = new google.maps.Geocoder();
     geocoder.geocode({address}, (results, status) => {
-      // 先处理明确的配额/权限错误
-      if (status === 'OVER_QUERY_LIMIT') {
-        return reject(new Error('API服务配额已耗尽，请稍后再试'));
-      }
-      if (status === 'REQUEST_DENIED') {
-        return reject(new Error('API服务配额已耗尽，请检查访问权限'));
-      }
-      
-      // 处理其他错误状态
-      if (status === 'ZERO_RESULTS') {
-        return reject(new Error('未找到匹配地址，请检查地址格式'));
-      }
-      if (status === 'INVALID_REQUEST') {
-        return reject(new Error('请求格式错误，请检查地址'));
-      }
-      if (status !== "OK" || !results || !results.length) {
+      if (status !== "OK" || !results?.length) {
         return reject(new Error(`地址查询失败: ${status}`));
       }
-      
       const result = results[0];
       let state = "";
+      let rawState = ""; // 用于导航链接的原始州名
       for (const c of result.address_components) {
         if (c.types.includes("administrative_area_level_1")) {
-          state = c.long_name;
+          rawState = c.long_name;
+          // 格式化州名以匹配JSON键
+          state = rawState.toLowerCase().replace(/\s+/g, '-');
           break;
         }
       }
       if (!state) return reject(new Error("未能识别州名，无法继续"));
-
-      // 使用格式化函数将州名转换为统一格式
-      state = formatStateName(state);
-
       resolve({
         lat: result.geometry.location.lat(),
         lng: result.geometry.location.lng(),
-        state: state,
-        stateRaw: state
+        state: state, // 格式化后的州名 (e.g., new-york)
+        stateRaw: rawState // 原始州名 (e.g., New York)
       });
     });
   });
-
   return withTimeout(geocodePromise, REQUEST_TIMEOUT);
 }
 
-// 从本地JSON文件加载城市数据
+// 从本地JSON文件加载城市数据 (无需修改)
 async function getCitiesInState(stateKey) {
   try {
     const resp = await fetch('skipCities.json');
-    if (!resp.ok) {
-      throw new Error('城市数据加载失败');
-    }
+    if (!resp.ok) throw new Error('城市数据加载失败');
     const data = await resp.json();
     const cities = data[stateKey];
     if (!cities || !cities.length) throw new Error(`未找到 "${stateKey}" 州的城市数据`);
@@ -169,99 +145,74 @@ async function getCitiesInState(stateKey) {
   }
 }
 
-// 获取城市之间的距离
-function getDistanceForCity(origin, city, stateRaw) {
+// [修改] 改造距离计算函数，使其能处理一个批量的城市
+function getDistancesForCityBatch(origin, cityChunk, stateRaw) {
   const distancePromise = new Promise((resolve) => {
     try {
       checkGoogleMapsAPI();
       const service = new google.maps.DistanceMatrixService();
       service.getDistanceMatrix({
         origins: [origin],
-        destinations: [`${city}, ${stateRaw}`],
+        destinations: cityChunk.map(city => `${city}, ${stateRaw}`), // 传入批量目的地
         travelMode: google.maps.TravelMode.DRIVING,
         unitSystem: google.maps.UnitSystem.IMPERIAL,
       }, (response, status) => {
-        let result = {
-          city,
-          distance: "未知",
-          duration: "未知",
-          distanceVal: Infinity,
-          error: null
-        };
-        
-        if (status === 'OVER_QUERY_LIMIT') {
-          result.error = 'quota_exceeded';
-          result.distance = "配额耗尽";
-          result.duration = "配额耗尽";
-        } else if (status === 'REQUEST_DENIED') {
-          result.error = 'quota_exceeded';
-          result.distance = "权限不足";
-          result.duration = "权限不足";
-        } else if (status === "OK" && response.rows[0].elements[0].status === "OK") {
-          const elem = response.rows[0].elements[0];
-          result.distance = elem.distance.text;
-          result.duration = elem.duration.text;
-          result.distanceVal = elem.distance.value;
-        } else {
-          result.distance = "查询失败";
-          result.duration = "查询失败";
+        if (status !== 'OK') {
+          // 如果整个批量请求失败，则该批次所有城市都标记为失败
+          const errorResult = cityChunk.map(city => ({ city, distance: "批量查询失败", duration: "N/A", distanceVal: Infinity }));
+          resolve(errorResult);
+          return;
         }
-        resolve(result);
+
+        // 谷歌API会按顺序返回结果，我们将其与输入城市一一对应
+        const results = response.rows[0].elements.map((element, index) => {
+          const city = cityChunk[index];
+          if (element.status === "OK") {
+            return {
+              city: city,
+              distance: element.distance.text,
+              duration: element.duration.text,
+              distanceVal: element.distance.value,
+              error: null
+            };
+          } else {
+            return { city: city, distance: "查询失败", duration: "N/A", distanceVal: Infinity, error: 'individual_error' };
+          }
+        });
+        resolve(results);
       });
     } catch (e) {
-      resolve({
-        city,
-        distance: "服务异常",
-        duration: "服务异常",
-        distanceVal: Infinity,
-        error: 'service_error'
-      });
+      const exceptionResult = cityChunk.map(city => ({ city, distance: "服务异常", duration: "N/A", distanceVal: Infinity, error: 'service_error' }));
+      resolve(exceptionResult);
     }
   });
 
-  return withTimeout(distancePromise, REQUEST_TIMEOUT).catch(() => ({
-    city,
-    distance: "请求超时",
-    duration: "请求超时",
-    distanceVal: Infinity,
-    error: 'timeout'
-  }));
+  return withTimeout(distancePromise, REQUEST_TIMEOUT).catch(() => {
+     return cityChunk.map(city => ({ city, distance: "请求超时", duration: "N/A", distanceVal: Infinity, error: 'timeout' }));
+  });
 }
 
-// 并发池
+// 并发池 (无需修改, 但返回结果需要处理)
 async function concurrentPool(tasks, poolLimit, onProgress) {
-  let i = 0;
-  let results = [];
-  let active = 0;
-  let quotaErrors = 0;
-
-  return new Promise((resolve, reject) => {
+  let i = 0, results = [], active = 0;
+  return new Promise((resolve) => {
     function next() {
       while (active < poolLimit && i < tasks.length) {
         active++;
         const current = i++;
         tasks[current]().then(res => {
           results[current] = res;
-          if (res.error === 'quota_exceeded') {
-            quotaErrors++;
-          }
           active--;
-          onProgress && onProgress(results.filter(x => x).length, tasks.length, quotaErrors);
-          if (results.length === tasks.length && results.every(x => x)) {
+          onProgress?.(results.filter(x => x).length, tasks.length);
+          if (results.filter(x => x).length === tasks.length) {
             resolve(results);
           } else {
             next();
           }
         }).catch(err => {
-          results[current] = {
-            city: tasks[current].city, 
-            distance: "查询失败", 
-            duration: "查询失败", 
-            distanceVal: Infinity,
-            error: 'unknown'
-          };
+          results[current] = []; // 如果批次任务失败，返回空数组
           active--;
-          onProgress && onProgress(results.filter(x => x).length, tasks.length, quotaErrors);
+          onProgress?.(results.filter(x => x).length, tasks.length);
           next();
         });
       }
@@ -270,7 +221,7 @@ async function concurrentPool(tasks, poolLimit, onProgress) {
   });
 }
 
-// 事件处理
+// --- 事件处理主逻辑 ---
 const btn = document.getElementById('btnSearch');
 const loadingEl = document.getElementById('loading');
 const errorEl   = document.getElementById('error');
@@ -282,55 +233,47 @@ const progressText = document.getElementById('progressText');
 btn.onclick = async function() {
   errorEl.textContent = '';
   resultsEl.innerHTML = '';
-  loadingEl.style.display = '';
+  loadingEl.style.display = 'block';
   progressContainer.style.display = 'none';
-  progressBar.style.width = '0%';
-  progressText.textContent = '';
   
   try {
     const input = document.getElementById('addressInput').value.trim();
     if (!input) throw new Error("请输入店铺地址");
 
-    // 首先检查API可用性
-    checkGoogleMapsAPI();
-
     const {lat, lng, state, stateRaw} = await geocodeAddress(input);
     const cities = await getCitiesInState(state);
 
-    progressContainer.style.display = '';
-    progressText.textContent = `已完成 0 / ${cities.length} 城市`;
+    // [修改] 将城市列表分块
+    const cityChunks = chunkArray(cities, BATCH_SIZE);
+    
+    // [修改] 为每个分块创建一个任务，而不是为每个城市
+    const tasks = cityChunks.map(chunk => 
+      () => getDistancesForCityBatch(`${lat},${lng}`, chunk, stateRaw)
+    );
 
-    // 创建所有任务（每个城市1个API请求）
-    const tasks = cities.map(city => {
-      const fn = () => getDistanceForCity(`${lat},${lng}`, city, stateRaw);
-      fn.city = city;
-      return fn;
-    });
-
-    // 并发池执行
-    const allResults = await concurrentPool(
+    progressContainer.style.display = 'block';
+    progressText.textContent = `准备查询 ${cityChunks.length} 个批次...`;
+    
+    // [修改] 并发池现在执行的是批量任务
+    const resultsFromPool = await concurrentPool(
       tasks,
       MAX_CONCURRENT,
-      (finished, total, quotaErrors) => {
+      (finished, total) => {
         const percent = Math.round((finished / total) * 100);
         progressBar.style.width = percent + "%";
-        let statusText = `已完成 ${finished} / ${total} 城市（${percent}%）`;
-        if (quotaErrors > 0) {
-          statusText += ` - 检测到配额限制`;
-        }
-        progressText.textContent = statusText;
+        progressText.textContent = `已完成 ${finished} / ${total} 批次 (${percent}%)`;
       }
     );
+
+    // [修改] 将返回的二维数组结果扁平化为一维数组
+    const allResults = resultsFromPool.flat();
 
     allResults.sort((a, b) => a.distanceVal - b.distanceVal);
 
     let html = `<table>
       <thead>
         <tr>
-          <th>城市</th>
-          <th>距离</th>
-          <th>驾车所需时间</th>
-          <th>导航</th>
+          <th>城市</th><th>距离</th><th>驾车所需时间</th><th>导航</th>
         </tr>
       </thead>
       <tbody>
@@ -340,35 +283,31 @@ btn.onclick = async function() {
           <td>${r.distance}</td>
           <td>${r.duration}</td>
           <td>
-            <a class="nav-link" href="https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(input)}&destination=${encodeURIComponent(r.city + ', ' + stateRaw)}" target="_blank">导航</a>
+            <a class="nav-link" href="https://maps.google.com/maps?saddr=${encodeURIComponent(input)}&daddr=${encodeURIComponent(r.city + ', ' + stateRaw)}" target="_blank">导航</a>
           </td>
         </tr>
       `).join('')}
       </tbody>
     </table>`;
 
-    // 检查是否有配额错误
-    const quotaErrorCount = allResults.filter(r => r.error === 'quota_exceeded').length;
+    const quotaErrorCount = allResults.filter(r => r.error).length;
     if (quotaErrorCount > 0) {
       html += `<div class="quota-warning">
-        <strong>提示：</strong>检测到 ${quotaErrorCount} 个城市查询遇到配额限制，部分结果可能不准确。建议稍后再试或联系管理员。
+        <strong>提示：</strong>有 ${quotaErrorCount} 个城市的查询遇到问题，部分结果可能不准确。
       </div>`;
     }
 
     resultsEl.innerHTML = html;
-    progressBar.style.width = "100%";
     progressText.textContent = `全部完成 (${cities.length} 城市)`;
+
+  } catch (e) {
+    errorEl.textContent = e.message;
+  } finally {
+    loadingEl.style.display = 'none';
     setTimeout(() => {
       progressContainer.style.display = 'none';
       progressText.textContent = '';
     }, 2000);
-
-  } catch (e) {
-    errorEl.textContent = e.message;
-    progressContainer.style.display = 'none';
-    progressText.textContent = '';
-  } finally {
-    loadingEl.style.display = 'none';
   }
 };
 </script>
