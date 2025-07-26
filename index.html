@@ -1,382 +1,873 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>顶流广告技术有限公司</title>
-  <style>
-    body { font-family: Arial, sans-serif; max-width:800px; margin:0 auto; padding:20px; background:#f5f5f5; }
-    .container { background:#fff; padding:20px; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.1); }
-    .input-group { margin-bottom:20px; }
-    input, button { font-size:16px; padding:10px; }
-    button { background:#4CAF50; color:#fff; border:none; border-radius:4px; cursor:pointer; }
-    button:hover { background:#45a049; }
-    .results, .error, .loading { margin-top:20px; }
-    .error { color:#f44336; }
-    .loading { text-align:center; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-    th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
-    th { background: #f0f0f0; }
-    a.nav-link { color: #1a73e8; text-decoration: underline; }
-    a.nav-link:hover { color: #0c51a1; }
-    .progress-container {
-      width: 100%;
-      background: #eee;
-      border-radius: 10px;
-      height: 18px;
-      margin: 10px 0 12px 0;
-      overflow: hidden;
-      box-shadow: 0 1px 3px #ddd inset;
-      display: none;
-    }
-    .progress-bar {
-      height: 100%;
-      background: linear-gradient(90deg, #4CAF50 60%, #81C784 100%);
-      width: 0;
-      transition: width 0.3s;
-      border-radius: 10px 0 0 10px;
-    }
-    .progress-text {
-      margin-top: 4px;
-      color: #555;
-      font-size: 14px;
-      text-align: center;
-    }
-    .quota-warning {
-      background: #fff3cd;
-      color: #856404;
-      padding: 12px;
-      border-radius: 4px;
-      border: 1px solid #ffeaa7;
-      margin-top: 10px;
-    }
-    /* Password Protection Styles */
-    .password-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0, 0, 0, 0.8);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        z-index: 1000;
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>顶流广告技术有限公司</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
     }
-    .password-prompt {
-        background: #fff;
-        padding: 30px;
-        border-radius: 8px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-        text-align: center;
+    
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
     }
-    .password-prompt input {
-        margin-bottom: 15px;
-        display: block;
-        width: 100%;
-        box-sizing: border-box;
+    
+    .main-wrapper {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 20px;
+      animation: slideUp 0.6s ease-out;
     }
-    .password-prompt button {
-        width: 100%;
+    
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
-    .password-error {
-        color: #f44336;
-        margin-top: 10px;
+    
+    .sidebar {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+      padding: 25px;
+      height: fit-content;
+      position: sticky;
+      top: 20px;
     }
-  </style>
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyASFANcoyPfMKVQFjgd6Ajz7UdXXkCeB3w&libraries=places"></script>
+    
+    .sidebar h3 {
+      color: #374151;
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 20px;
+      text-align: center;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #e5e7eb;
+    }
+    
+    .history-list {
+      list-style: none;
+    }
+    
+    .history-item {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      margin-bottom: 8px;
+      transition: all 0.3s ease;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .history-item:hover {
+      background: #e2e8f0;
+      transform: translateX(5px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+    
+    .history-item-content {
+      padding: 12px 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .history-address {
+      font-size: 14px;
+      color: #374151;
+      font-weight: 500;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    
+    .history-delete {
+      color: #ef4444;
+      font-size: 16px;
+      padding: 4px;
+      border-radius: 4px;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      cursor: pointer;
+      margin-left: 8px;
+    }
+    
+    .history-item:hover .history-delete {
+      opacity: 1;
+    }
+    
+    .history-delete:hover {
+      background: #fee2e2;
+    }
+    
+    .clear-history {
+      width: 100%;
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-top: 15px;
+    }
+    
+    .clear-history:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+    }
+    
+    .empty-history {
+      text-align: center;
+      color: #9ca3af;
+      font-size: 14px;
+      padding: 20px 10px;
+      font-style: italic;
+    }
+    
+    .container { 
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .header::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: linear-gradient(45deg, transparent, rgba(255,255,255,0.1), transparent);
+      animation: shimmer 3s infinite;
+    }
+    
+    @keyframes shimmer {
+      0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
+      100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
+    }
+    
+    .header h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      position: relative;
+      z-index: 1;
+    }
+    
+    .header .subtitle {
+      font-size: 1rem;
+      opacity: 0.9;
+      position: relative;
+      z-index: 1;
+    }
+    
+    .content {
+      padding: 40px;
+    }
+    
+    .input-section {
+      background: #f8f9ff;
+      border-radius: 16px;
+      padding: 30px;
+      margin-bottom: 30px;
+      border: 1px solid #e3e8ff;
+    }
+    
+    .input-group {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    
+    .input-wrapper {
+      flex: 1;
+      min-width: 300px;
+      position: relative;
+    }
+    
+    input {
+      width: 100%;
+      font-size: 16px;
+      padding: 16px 20px;
+      border: 2px solid #e1e5e9;
+      border-radius: 12px;
+      background: white;
+      transition: all 0.3s ease;
+      outline: none;
+    }
+    
+    input:focus {
+      border-color: #4CAF50;
+      box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
+      transform: translateY(-1px);
+    }
+    
+    input::placeholder {
+      color: #9ca3af;
+    }
+    
+    .search-btn {
+      background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 16px 32px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+      min-width: 120px;
+    }
+    
+    .search-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(76, 175, 80, 0.3);
+    }
+    
+    .search-btn:active {
+      transform: translateY(0);
+    }
+    
+    .search-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.5s;
+    }
+    
+    .search-btn:hover::before {
+      left: 100%;
+    }
+    
+    .feature-note {
+      color: #6b7280;
+      font-size: 14px;
+      text-align: center;
+      margin-top: 15px;
+      padding: 12px;
+      background: rgba(107, 114, 128, 0.1);
+      border-radius: 8px;
+      border-left: 4px solid #4CAF50;
+    }
+    
+    .progress-container {
+      background: #f3f4f6;
+      border-radius: 12px;
+      height: 24px;
+      margin: 20px 0;
+      overflow: hidden;
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+      display: none;
+      position: relative;
+    }
+    
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #4CAF50 0%, #66bb6a 50%, #81c784 100%);
+      width: 0;
+      transition: width 0.4s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .progress-bar::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      right: 0;
+      background: linear-gradient(45deg, transparent 33%, rgba(255,255,255,0.3) 33%, rgba(255,255,255,0.3) 66%, transparent 66%);
+      background-size: 30px 30px;
+      animation: progressStripes 1s linear infinite;
+    }
+    
+    @keyframes progressStripes {
+      0% { background-position: 0 0; }
+      100% { background-position: 30px 0; }
+    }
+    
+    .progress-text {
+      margin-top: 8px;
+      color: #374151;
+      font-size: 14px;
+      text-align: center;
+      font-weight: 500;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #4CAF50;
+      font-size: 18px;
+      font-weight: 500;
+    }
+    
+    .loading::after {
+      content: '';
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid #e3f2fd;
+      border-top: 3px solid #4CAF50;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-left: 10px;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .error {
+      background: #fee2e2;
+      color: #dc2626;
+      padding: 16px 20px;
+      border-radius: 12px;
+      border-left: 4px solid #dc2626;
+      margin: 20px 0;
+      font-weight: 500;
+    }
+    
+    .results {
+      margin-top: 30px;
+      animation: fadeIn 0.5s ease-out;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    }
+    
+    th {
+      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+      color: #374151;
+      font-weight: 600;
+      padding: 18px 16px;
+      text-align: left;
+      border-bottom: 2px solid #e5e7eb;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    td {
+      padding: 16px;
+      border-bottom: 1px solid #f3f4f6;
+      transition: background-color 0.2s ease;
+    }
+    
+    tr:hover td {
+      background-color: #f8fafc;
+    }
+    
+    tr:last-child td {
+      border-bottom: none;
+    }
+    
+    .nav-link {
+      color: #4CAF50;
+      text-decoration: none;
+      font-weight: 600;
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 2px solid #4CAF50;
+      transition: all 0.3s ease;
+      display: inline-block;
+      font-size: 14px;
+    }
+    
+    .nav-link:hover {
+      background: #4CAF50;
+      color: white;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+    }
+    
+    .quota-warning {
+      background: linear-gradient(135deg, #fff3cd 0%, #fef3c7 100%);
+      color: #92400e;
+      padding: 20px;
+      border-radius: 12px;
+      border-left: 4px solid #f59e0b;
+      margin-top: 20px;
+      font-weight: 500;
+    }
+    
+    .quota-warning strong {
+      color: #78350f;
+    }
+    
+    @media (max-width: 1024px) {
+      .main-wrapper {
+        grid-template-columns: 1fr;
+        gap: 15px;
+        max-width: 800px;
+      }
+      
+      .sidebar {
+        position: static;
+        order: 2;
+      }
+    }
+    
+    @media (max-width: 768px) {
+      body {
+        padding: 10px;
+      }
+      
+      .content {
+        padding: 20px;
+      }
+      
+      .input-group {
+        flex-direction: column;
+      }
+      
+      .input-wrapper {
+        min-width: auto;
+      }
+      
+      .header h1 {
+        font-size: 1.8rem;
+      }
+      
+      table {
+        font-size: 14px;
+      }
+      
+      th, td {
+        padding: 12px 8px;
+      }
+    }
+  </style>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyASFANcoyPfMKVQFjgd6Ajz7UdXXkCeB3w&libraries=places"></script>
 </head>
 <body>
-    <div class="password-overlay" id="passwordOverlay">
-        <div class="password-prompt">
-            <h2>请输入访问密码</h2>
-            <input type="password" id="passwordInput" placeholder="密码" />
-            <button id="passwordSubmit">进入</button>
-            <div id="passwordError" class="password-error"></div>
-        </div>
+  <div class="main-wrapper">
+    <!-- 左侧历史记录 -->
+    <div class="sidebar">
+      <h3>📋 查询历史</h3>
+      <ul id="historyList" class="history-list">
+        <li class="empty-history">暂无查询记录</li>
+      </ul>
+      <button id="clearHistory" class="clear-history" style="display:none;">🗑️ 清空历史</button>
     </div>
-
-  <div class="container" id="mainContent" style="display:none;">
-    <h1>顶流广告技术有限公司</h1>
-    <div class="input-group">
-      <input id="addressInput" type="text" placeholder="请输入店铺地址" />
-      <button id="btnSearch">点击查询</button>
-      <div style="margin-top:8px;color:#666;">Ski定点查询</div>
-    </div>
-    <div class="progress-container" id="progressContainer">
-      <div class="progress-bar" id="progressBar"></div>
-    </div>
-    <div class="progress-text" id="progressText"></div>
-    <div id="loading" class="loading" style="display:none;">正在计算中...</div>
-    <div id="error" class="error"></div>
-    <div id="results" class="results"></div>
-  </div>
+    
+    <!-- 主要内容区域 -->
+    <div class="container">
+      <div class="header">
+        <h1>顶流广告技术有限公司</h1>
+        <div class="subtitle"></div>
+      </div>
+      
+      <div class="content">
+        <div class="input-section">
+          <div class="input-group">
+            <div class="input-wrapper">
+              <input id="addressInput" type="text" placeholder="请输入店铺地址进行智能查询" />
+            </div>
+            <button id="btnSearch" class="search-btn">开始查询</button>
+          </div>
+          <div class="feature-note">
+            🎯 Ski定点查询
+          </div>
+        </div>
+        
+        <div class="progress-container" id="progressContainer">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div class="progress-text" id="progressText"></div>
+        <div id="loading" class="loading" style="display:none;">正在智能计算中</div>
+        <div id="error" class="error"></div>
+        <div id="results" class="results"></div>
+      </div>
+    </div>
+  </div>
 
 <script>
-// Password Protection Logic
-const CORRECT_PASSWORD = "skrtao";
-const passwordInput = document.getElementById('passwordInput');
-const passwordSubmit = document.getElementById('passwordSubmit');
-const passwordOverlay = document.getElementById('passwordOverlay');
-const mainContent = document.getElementById('mainContent');
-const passwordError = document.getElementById('passwordError');
-
-passwordSubmit.addEventListener('click', () => {
-    if (passwordInput.value === CORRECT_PASSWORD) {
-        passwordOverlay.style.display = 'none';
-        mainContent.style.display = 'block';
-    } else {
-        passwordError.textContent = '密码错误，请重试。';
-        passwordInput.value = ''; // Clear the input
-    }
-});
-
-passwordInput.addEventListener('keypress', (event) => {
-    if (event.key === 'Enter') {
-        passwordSubmit.click();
-    }
-});
-
-
 const MAX_CONCURRENT = 15;
 const REQUEST_TIMEOUT = 60000;
-const BATCH_SIZE = 25; // [新增] 定义API支持的最大批量
+const BATCH_SIZE = 25;
+const HISTORY_KEY = 'search_history';
+const MAX_HISTORY = 10;
+
+// --- 历史记录管理 ---
+class SearchHistory {
+  constructor() {
+    this.history = this.loadHistory();
+    this.renderHistory();
+  }
+  
+  loadHistory() {
+    try {
+      const saved = localStorage.getItem(HISTORY_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.warn('历史记录加载失败:', e);
+      return [];
+    }
+  }
+  
+  saveHistory() {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(this.history));
+    } catch (e) {
+      console.warn('历史记录保存失败:', e);
+    }
+  }
+  
+  addHistory(address) {
+    if (!address || !address.trim()) return;
+    
+    // 移除重复项
+    this.history = this.history.filter(item => item !== address);
+    // 添加到开头
+    this.history.unshift(address);
+    // 保持最多10条记录
+    if (this.history.length > MAX_HISTORY) {
+      this.history = this.history.slice(0, MAX_HISTORY);
+    }
+    
+    this.saveHistory();
+    this.renderHistory();
+  }
+  
+  removeHistory(address) {
+    this.history = this.history.filter(item => item !== address);
+    this.saveHistory();
+    this.renderHistory();
+  }
+  
+  clearHistory() {
+    this.history = [];
+    this.saveHistory();
+    this.renderHistory();
+  }
+  
+  renderHistory() {
+    const historyList = document.getElementById('historyList');
+    const clearBtn = document.getElementById('clearHistory');
+    
+    if (this.history.length === 0) {
+      historyList.innerHTML = '<li class="empty-history">暂无查询记录</li>';
+      clearBtn.style.display = 'none';
+    } else {
+      clearBtn.style.display = 'block';
+      historyList.innerHTML = this.history.map(address => `
+        <li class="history-item" onclick="searchHistory.selectHistory('${address.replace(/'/g, "\\'")}')">
+          <div class="history-item-content">
+            <span class="history-address" title="${address}">${address}</span>
+            <span class="history-delete" onclick="event.stopPropagation(); searchHistory.removeHistory('${address.replace(/'/g, "\\'")}')">✕</span>
+          </div>
+        </li>
+      `).join('');
+    }
+  }
+  
+  selectHistory(address) {
+    document.getElementById('addressInput').value = address;
+    // 触发搜索
+    document.getElementById('btnSearch').click();
+  }
+}
+
+// 初始化历史记录管理器
+const searchHistory = new SearchHistory();
+
+// 清空历史按钮事件
+document.getElementById('clearHistory').onclick = () => {
+  if (confirm('确定要清空所有查询历史吗？')) {
+    searchHistory.clearHistory();
+  }
+};
 
 // --- 辅助函数 ---
 function checkGoogleMapsAPI() {
-  if (typeof google === 'undefined' || !google.maps) {
-    throw new Error('API服务配额已耗尽，请稍后再试');
-  }
-}
-function withTimeout(promise, timeoutMs) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('API服务响应超时')), timeoutMs))
-  ]);
-}
-// [新增] 数组分块函数，用于将城市列表按BATCH_SIZE分割
-function chunkArray(arr, size) {
-  const chunks = [];
-  for (let i = 0; i < arr.length; i += size) {
-    chunks.push(arr.slice(i, i + size));
-  }
-  return chunks;
+  if (typeof google === 'undefined' || !google.maps) {
+    throw new Error('API服务配额已耗尽，请稍后再试');
+  }
 }
 
+function withTimeout(promise, timeoutMs) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('API服务响应超时')), timeoutMs))
+  ]);
+}
+
+function chunkArray(arr, size) {
+  const chunks = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
 
 // --- 核心功能函数 ---
 
-// 根据地址获取经纬度和州名 (无需修改)
+// 根据地址获取经纬度和州名
 async function geocodeAddress(address) {
-  checkGoogleMapsAPI();
-  const geocodePromise = new Promise((resolve, reject) => {
-    const geocoder = new google.maps.Geocoder();
-    geocoder.geocode({address}, (results, status) => {
-      if (status !== "OK" || !results?.length) {
-        return reject(new Error(`地址查询失败: ${status}`));
-      }
-      const result = results[0];
-      let state = "";
-      let rawState = ""; // 用于导航链接的原始州名
-      for (const c of result.address_components) {
-        if (c.types.includes("administrative_area_level_1")) {
-          rawState = c.long_name;
-          // 格式化州名以匹配JSON键
-          state = rawState.toLowerCase().replace(/\s+/g, '-');
-          break;
-        }
-      }
-      if (!state) return reject(new Error("未能识别州名，无法继续"));
-      resolve({
-        lat: result.geometry.location.lat(),
-        lng: result.geometry.location.lng(),
-        state: state, // 格式化后的州名 (e.g., new-york)
-        stateRaw: rawState // 原始州名 (e.g., New York)
-      });
-    });
-  });
-  return withTimeout(geocodePromise, REQUEST_TIMEOUT);
+  checkGoogleMapsAPI();
+  const geocodePromise = new Promise((resolve, reject) => {
+    const geocoder = new google.maps.Geocoder();
+    geocoder.geocode({address}, (results, status) => {
+      if (status !== "OK" || !results?.length) {
+        return reject(new Error(`地址查询失败: ${status}`));
+      }
+      const result = results[0];
+      let state = "";
+      let rawState = "";
+      for (const c of result.address_components) {
+        if (c.types.includes("administrative_area_level_1")) {
+          rawState = c.long_name;
+          state = rawState.toLowerCase().replace(/\s+/g, '-');
+          break;
+        }
+      }
+      if (!state) return reject(new Error("未能识别州名，无法继续"));
+      resolve({
+        lat: result.geometry.location.lat(),
+        lng: result.geometry.location.lng(),
+        state: state,
+        stateRaw: rawState
+      });
+    });
+  });
+  return withTimeout(geocodePromise, REQUEST_TIMEOUT);
 }
 
-// 从本地JSON文件加载城市数据 (无需修改)
+// 从本地JSON文件加载城市数据
 async function getCitiesInState(stateKey) {
-  try {
-    const resp = await fetch('skipCities.json');
-    if (!resp.ok) throw new Error('城市数据加载失败');
-    const data = await resp.json();
-    const cities = data[stateKey];
-    if (!cities || !cities.length) throw new Error(`未找到 "${stateKey}" 州的城市数据`);
-    return cities;
-  } catch (e) {
-    throw new Error('城市数据加载失败，请稍后再试');
-  }
+  try {
+    const resp = await fetch('skipCities.json');
+    if (!resp.ok) throw new Error('城市数据加载失败');
+    const data = await resp.json();
+    const cities = data[stateKey];
+    if (!cities || !cities.length) throw new Error(`未找到 "${stateKey}" 州的城市数据`);
+    return cities;
+  } catch (e) {
+    throw new Error('城市数据加载失败，请稍后再试');
+  }
 }
 
-// [修改] 改造距离计算函数，使其能处理一个批量的城市
+// 批量距离计算函数
 function getDistancesForCityBatch(origin, cityChunk, stateRaw) {
-  const distancePromise = new Promise((resolve) => {
-    try {
-      checkGoogleMapsAPI();
-      const service = new google.maps.DistanceMatrixService();
-      service.getDistanceMatrix({
-        origins: [origin],
-        destinations: cityChunk.map(city => `${city}, ${stateRaw}`), // 传入批量目的地
-        travelMode: google.maps.TravelMode.DRIVING,
-        unitSystem: google.maps.UnitSystem.IMPERIAL,
-      }, (response, status) => {
-        if (status !== 'OK') {
-          // 如果整个批量请求失败，则该批次所有城市都标记为失败
-          const errorResult = cityChunk.map(city => ({ city, distance: "批量查询失败", duration: "N/A", distanceVal: Infinity }));
-          resolve(errorResult);
-          return;
-        }
+  const distancePromise = new Promise((resolve) => {
+    try {
+      checkGoogleMapsAPI();
+      const service = new google.maps.DistanceMatrixService();
+      service.getDistanceMatrix({
+        origins: [origin],
+        destinations: cityChunk.map(city => `${city}, ${stateRaw}`),
+        travelMode: google.maps.TravelMode.DRIVING,
+        unitSystem: google.maps.UnitSystem.IMPERIAL,
+      }, (response, status) => {
+        if (status !== 'OK') {
+          const errorResult = cityChunk.map(city => ({ city, distance: "批量查询失败", duration: "N/A", distanceVal: Infinity }));
+          resolve(errorResult);
+          return;
+        }
 
-        // 谷歌API会按顺序返回结果，我们将其与输入城市一一对应
-        const results = response.rows[0].elements.map((element, index) => {
-          const city = cityChunk[index];
-          if (element.status === "OK") {
-            return {
-              city: city,
-              distance: element.distance.text,
-              duration: element.duration.text,
-              distanceVal: element.distance.value,
-              error: null
-            };
-          } else {
-            return { city: city, distance: "查询失败", duration: "N/A", distanceVal: Infinity, error: 'individual_error' };
-          }
-        });
-        resolve(results);
-      });
-    } catch (e) {
-      const exceptionResult = cityChunk.map(city => ({ city, distance: "服务异常", duration: "N/A", distanceVal: Infinity, error: 'service_error' }));
-      resolve(exceptionResult);
-    }
-  });
+        const results = response.rows[0].elements.map((element, index) => {
+          const city = cityChunk[index];
+          if (element.status === "OK") {
+            return {
+              city: city,
+              distance: element.distance.text,
+              duration: element.duration.text,
+              distanceVal: element.distance.value,
+              error: null
+            };
+          } else {
+            return { city: city, distance: "查询失败", duration: "N/A", distanceVal: Infinity, error: 'individual_error' };
+          }
+        });
+        resolve(results);
+      });
+    } catch (e) {
+      const exceptionResult = cityChunk.map(city => ({ city, distance: "服务异常", duration: "N/A", distanceVal: Infinity, error: 'service_error' }));
+      resolve(exceptionResult);
+    }
+  });
 
-  return withTimeout(distancePromise, REQUEST_TIMEOUT).catch(() => {
-     return cityChunk.map(city => ({ city, distance: "请求超时", duration: "N/A", distanceVal: Infinity, error: 'timeout' }));
-  });
+  return withTimeout(distancePromise, REQUEST_TIMEOUT).catch(() => {
+     return cityChunk.map(city => ({ city, distance: "请求超时", duration: "N/A", distanceVal: Infinity, error: 'timeout' }));
+  });
 }
 
-// 并发池 (无需修改, 但返回结果需要处理)
+// 并发池
 async function concurrentPool(tasks, poolLimit, onProgress) {
-  let i = 0, results = [], active = 0;
-  return new Promise((resolve) => {
-    function next() {
-      while (active < poolLimit && i < tasks.length) {
-        active++;
-        const current = i++;
-        tasks[current]().then(res => {
-          results[current] = res;
-          active--;
-          onProgress?.(results.filter(x => x).length, tasks.length);
-          if (results.filter(x => x).length === tasks.length) {
-            resolve(results);
-          } else {
-            next();
-          }
-        }).catch(err => {
-          results[current] = []; // 如果批次任务失败，返回空数组
-          active--;
-          onProgress?.(results.filter(x => x).length, tasks.length);
-          next();
-        });
-      }
-    }
-    next();
-  });
+  let i = 0, results = [], active = 0;
+  return new Promise((resolve) => {
+    function next() {
+      while (active < poolLimit && i < tasks.length) {
+        active++;
+        const current = i++;
+        tasks[current]().then(res => {
+          results[current] = res;
+          active--;
+          onProgress?.(results.filter(x => x).length, tasks.length);
+          if (results.filter(x => x).length === tasks.length) {
+            resolve(results);
+          } else {
+            next();
+          }
+        }).catch(err => {
+          results[current] = [];
+          active--;
+          onProgress?.(results.filter(x => x).length, tasks.length);
+          next();
+        });
+      }
+    }
+    next();
+  });
 }
 
 // --- 事件处理主逻辑 ---
 const btn = document.getElementById('btnSearch');
 const loadingEl = document.getElementById('loading');
-const errorEl   = document.getElementById('error');
+const errorEl = document.getElementById('error');
 const resultsEl = document.getElementById('results');
 const progressContainer = document.getElementById('progressContainer');
 const progressBar = document.getElementById('progressBar');
 const progressText = document.getElementById('progressText');
 
 btn.onclick = async function() {
-  errorEl.textContent = '';
-  resultsEl.innerHTML = '';
-  loadingEl.style.display = 'block';
-  progressContainer.style.display = 'none';
-  
-  try {
-    const input = document.getElementById('addressInput').value.trim();
-    if (!input) throw new Error("请输入店铺地址");
+  errorEl.textContent = '';
+  errorEl.style.display = 'none';
+  resultsEl.innerHTML = '';
+  loadingEl.style.display = 'block';
+  progressContainer.style.display = 'none';
+  
+  try {
+    const input = document.getElementById('addressInput').value.trim();
+    if (!input) throw new Error("请输入店铺地址");
 
-    const {lat, lng, state, stateRaw} = await geocodeAddress(input);
-    const cities = await getCitiesInState(state);
+    // 添加到历史记录
+    searchHistory.addHistory(input);
 
-    // [修改] 将城市列表分块
-    const cityChunks = chunkArray(cities, BATCH_SIZE);
-    
-    // [修改] 为每个分块创建一个任务，而不是为每个城市
-    const tasks = cityChunks.map(chunk => 
-      () => getDistancesForCityBatch(`${lat},${lng}`, chunk, stateRaw)
-    );
+    const {lat, lng, state, stateRaw} = await geocodeAddress(input);
+    const cities = await getCitiesInState(state);
 
-    progressContainer.style.display = 'block';
-    progressText.textContent = `准备查询 ${cityChunks.length} 个批次...`;
-    
-    // [修改] 并发池现在执行的是批量任务
-    const resultsFromPool = await concurrentPool(
-      tasks,
-      MAX_CONCURRENT,
-      (finished, total) => {
-        const percent = Math.round((finished / total) * 100);
-        progressBar.style.width = percent + "%";
-        progressText.textContent = `已完成 ${finished} / ${total} 批次 (${percent}%)`;
-      }
-    );
+    const cityChunks = chunkArray(cities, BATCH_SIZE);
+    
+    const tasks = cityChunks.map(chunk => 
+      () => getDistancesForCityBatch(`${lat},${lng}`, chunk, stateRaw)
+    );
 
-    // [修改] 将返回的二维数组结果扁平化为一维数组
-    const allResults = resultsFromPool.flat();
+    progressContainer.style.display = 'block';
+    progressText.textContent = `准备查询 ${cityChunks.length} 个批次...`;
+    
+    const resultsFromPool = await concurrentPool(
+      tasks,
+      MAX_CONCURRENT,
+      (finished, total) => {
+        const percent = Math.round((finished / total) * 100);
+        progressBar.style.width = percent + "%";
+        progressText.textContent = `已完成 ${finished} / ${total} 批次 (${percent}%)`;
+      }
+    );
 
-    allResults.sort((a, b) => a.distanceVal - b.distanceVal);
+    const allResults = resultsFromPool.flat();
+    allResults.sort((a, b) => a.distanceVal - b.distanceVal);
 
-    let html = `<table>
-      <thead>
-        <tr>
-          <th>城市</th><th>距离</th><th>驾车所需时间</th><th>导航</th>
-        </tr>
-      </thead>
-      <tbody>
-      ${allResults.map(r => `
-        <tr>
-          <td>${r.city}</td>
-          <td>${r.distance}</td>
-          <td>${r.duration}</td>
-          <td>
-            <a class="nav-link" href="https://maps.google.com/maps?saddr=${encodeURIComponent(input)}&daddr=${encodeURIComponent(r.city + ', ' + stateRaw)}" target="_blank">导航</a>
-          </td>
-        </tr>
-      `).join('')}
-      </tbody>
-    </table>`;
+    let html = `<table>
+      <thead>
+        <tr>
+          <th>城市名称</th><th>距离</th><th>驾车时间</th><th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+      ${allResults.map(r => `
+        <tr>
+          <td><strong>${r.city}</strong></td>
+          <td>${r.distance}</td>
+          <td>${r.duration}</td>
+          <td>
+            <a class="nav-link" href="https://maps.google.com/maps?saddr=${encodeURIComponent(input)}&daddr=${encodeURIComponent(r.city + ', ' + stateRaw)}" target="_blank">📍 导航</a>
+          </td>
+        </tr>
+      `).join('')}
+      </tbody>
+    </table>`;
 
-    const quotaErrorCount = allResults.filter(r => r.error).length;
-    if (quotaErrorCount > 0) {
-      html += `<div class="quota-warning">
-        <strong>提示：</strong>有 ${quotaErrorCount} 个城市的查询遇到问题，部分结果可能不准确。
-      </div>`;
-    }
+    const quotaErrorCount = allResults.filter(r => r.error).length;
+    if (quotaErrorCount > 0) {
+      html += `<div class="quota-warning">
+        <strong>⚠️ 温馨提示：</strong>有 ${quotaErrorCount} 个城市的查询遇到问题，部分结果可能不准确。建议稍后重试或联系技术支持。
+      </div>`;
+    }
 
-    resultsEl.innerHTML = html;
-    progressText.textContent = `全部完成 (${cities.length} 城市)`;
+    resultsEl.innerHTML = html;
+    progressText.textContent = `✅ 查询完成！共计 ${cities.length} 个城市`;
 
-  } catch (e) {
-    errorEl.textContent = e.message;
-  } finally {
-    loadingEl.style.display = 'none';
-    setTimeout(() => {
-      progressContainer.style.display = 'none';
-      progressText.textContent = '';
-    }, 2000);
-  }
+  } catch (e) {
+    errorEl.textContent = `❌ ${e.message}`;
+    errorEl.style.display = 'block';
+  } finally {
+    loadingEl.style.display = 'none';
+    setTimeout(() => {
+      progressContainer.style.display = 'none';
+      progressText.textContent = '';
+    }, 2000);
+  }
 };
+
+// 添加回车键支持
+document.getElementById('addressInput').addEventListener('keypress', (event) => {
+  if (event.key === 'Enter') {
+    btn.click();
+  }
+});
 </script>
 </body>
 </html>
